@@ -1,8 +1,16 @@
-npm create vite@latest# Dependencies
+# Node.js Dependencies
 node_modules/
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
+
+# Python Dependencies
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
 
 # Environment variables
 .env
@@ -10,6 +18,7 @@ pnpm-lock.yaml
 .env.development.local
 .env.test.local
 .env.production.local
+*.env
 
 # Logs
 logs
@@ -37,9 +46,9 @@ coverage/
 *.swp
 *.swo
 *~
-.DS_Store
 
 # OS files
+.DS_Store
 Thumbs.db
 ehthumbs.db
 Desktop.ini
@@ -49,3 +58,7 @@ Desktop.ini
 *.temp
 .temp/
 tmp/
+
+# Uploads
+data/storage/uploads/*
+!data/storage/uploads/.gitkeep
