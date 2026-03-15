@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interview Platform - Find Your Perfect Interviewer</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon"></span>
+                <span class="logo-text">Interview Platform</span>
+            </div>
+            <nav class="nav">
+                <a href="#" class="nav-link active" onclick="showMatch(event)">Match</a>
+                <a href="#" class="nav-link" onclick="showInterviewers(event)">Interviewers</a>
+            </nav>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Upload Section -->
+            <section class="upload-section">
+                <div class="upload-card">
+                    <div class="upload-header">
+                        <h1>Find Your Perfect Interviewer</h1>
+                        <p>Upload your resume and we'll match you with the best interviewers based on your skills and
+                            experience</p>
+                    </div>
+
+                    <div class="upload-area" id="dropZone">
+                        <div class="upload-icon">📄</div>
+                        <h3>Drop your resume here</h3>
+                        <p>or click to browse</p>
+                        <span class="upload-formats">Supports PDF, DOCX (Max 10MB)</span>
+                        <input type="file" id="fileInput" accept=".pdf,.docx" hidden>
+                    </div>
+
+                    <div class="file-info" id="fileInfo" style="display: none;">
+                        <div class="file-icon">📎</div>
+                        <div class="file-details">
+                            <span class="file-name" id="fileName"></span>
+                            <span class="file-size" id="fileSize"></span>
+                        </div>
+                        <button class="btn-remove" onclick="removeFile()">✕</button>
+                    </div>
+
+                    <button class="btn-primary" id="matchBtn" onclick="uploadAndMatch()" disabled>
+                        <span class="btn-text">Find Matching Interviewers</span>
+                        <span class="btn-loader" style="display: none;"></span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- Results Section -->
+            <section class="results-section" id="resultsSection" style="display: none;">
+                <!-- Parsed Resume Summary -->
+                <div class="resume-summary" id="resumeSummary">
+                    <h2>📋 Your Profile</h2>
+                    <div class="summary-grid">
+                        <div class="summary-item">
+                            <span class="label">Name</span>
+                            <span class="value" id="candidateName">-</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="label">Experience</span>
+                            <span class="value" id="candidateExp">-</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="label">Level</span>
+                            <span class="value" id="candidateLevel">-</span>
+                        </div>
+                    </div>
+                    <div class="skills-container">
+                        <span class="label">Skills Detected</span>
+                        <div class="skills-list" id="skillsList"></div>
+                    </div>
+                </div>
+
+                <!-- Matching Interviewers -->
+                <div class="interviewers-section">
+                    <div class="section-header">
+                        <h2>🎯 Top Matching Interviewers</h2>
+                        <span class="match-count" id="matchCount"></span>
+                    </div>
+                    <div class="interviewers-grid" id="interviewersGrid"></div>
+                </div>
+            </section>
+
+            <!-- All Interviewers Section -->
+            <section class="all-interviewers-section" id="allInterviewersSection" style="display: none;">
+                <div class="section-header">
+                    <h2>👥 All Interviewers</h2>
+                    <div class="filters">
+                        <select id="skillFilter" onchange="filterInterviewers()">
+                            <option value="">All Skills</option>
+                            <option value="Python">Python</option>
+                            <option value="JavaScript">JavaScript</option>
+                            <option value="Java">Java</option>
+                            <option value="Go">Go</option>
+                            <option value="React">React</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="interviewers-grid" id="allInterviewersGrid"></div>
+            </section>
+        </main>
+
+        <!-- Loading Overlay -->
+        <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+            <div class="loader">
+                <div class="loader-spinner"></div>
+                <p>Analyzing your resume...</p>
+            </div>
+        </div>
+
+        <!-- Toast Notification -->
+        <div class="toast" id="toast"></div>
+    </div>
+
+    <script src="../src/app.js"></script>
+</body>
+
+</html>

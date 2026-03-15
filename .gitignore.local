@@ -1,0 +1,31 @@
+# Dependencies
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environment
+.env
+.env.local
+*.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads
+data/storage/uploads/*
+!data/storage/uploads/.gitkeep
+
+# Logs
+*.log
