@@ -1,0 +1,1 @@
+fastapi==0.104.1uvicorn==0.24.0sqlalchemy>=2.0.25aiosqlite==0.22.1python-multipart==0.0.6pydantic>=2.5.0pydantic[email]>=2.5.0python-dotenv==1.0.0pypdf==4.0.1python-docx==0.8.11openai==1.3.9anthropic==0.78.0google-generativeai==0.3.0aiofiles==23.2.1

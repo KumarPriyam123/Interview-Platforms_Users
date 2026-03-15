@@ -1,0 +1,1 @@
+from dotenv import load_dotenvload_dotenv()import uvicornfrom app.main import appif __name__ == "__main__":    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
