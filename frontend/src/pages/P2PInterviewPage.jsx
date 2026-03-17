@@ -27,6 +27,16 @@ function generateCallId() {
   return `p2p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+function generateParticipantId(displayName) {
+  const slug = displayName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+  return `${slug || 'participant'}-${Math.random().toString(36).slice(2, 8)}`
+}
+
 function formatElapsedTime(totalSeconds) {
   const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
@@ -104,7 +114,8 @@ export default function P2PInterviewPage() {
   const hasExitedSessionRef = useRef(false)
 
   const roomId = sessionConfig?.roomId ?? ''
-  const userId = sessionConfig?.userId ?? ''
+  const participantId = sessionConfig?.userId ?? ''
+  const displayName = sessionConfig?.displayName ?? ''
   const isSessionActive = Boolean(sessionConfig)
   const isInterviewer = currentRole === 'interviewer'
 
@@ -124,7 +135,7 @@ export default function P2PInterviewPage() {
     toggleVideo,
     sendPeerEvent,
     leaveRoom,
-  } = useWebRTC(roomId, userId)
+  } = useWebRTC(roomId, participantId, displayName)
 
   const liveParticipantCount = Math.max(participantCount, roomOccupancy)
   const inviteLink = useMemo(
@@ -158,7 +169,7 @@ export default function P2PInterviewPage() {
         state: {
           sessionType: 'p2p',
           roomId,
-          userId,
+          userId: displayName,
           interviewer: {
             name: endedBy,
           },
@@ -169,7 +180,7 @@ export default function P2PInterviewPage() {
         },
       })
     },
-    [currentRole, elapsedSeconds, isSessionActive, leaveRoom, navigate, remoteUserId, roomId, userId],
+    [currentRole, displayName, elapsedSeconds, isSessionActive, leaveRoom, navigate, remoteUserId, roomId],
   )
 
   useEffect(() => {
@@ -378,8 +389,9 @@ export default function P2PInterviewPage() {
 
   const handleCreateOrJoin = () => {
     const nextRoomId = draftRoomId.trim() || generateCallId()
-    const nextUserId = draftName.trim() || 'Candidate'
     const nextRole = draftRole === 'interviewee' ? 'interviewee' : 'interviewer'
+    const nextDisplayName = draftName.trim() || (nextRole === 'interviewer' ? 'Interviewer' : 'Interviewee')
+    const nextUserId = generateParticipantId(nextDisplayName)
 
     setDraftRoomId(nextRoomId)
     setCurrentRole(nextRole)
@@ -404,6 +416,7 @@ export default function P2PInterviewPage() {
     setSessionConfig({
       roomId: nextRoomId,
       userId: nextUserId,
+      displayName: nextDisplayName,
     })
 
     const nextParams = new URLSearchParams(searchParams)
@@ -457,8 +470,8 @@ export default function P2PInterviewPage() {
     }
 
     const message = buildMessage({
-      authorId: userId,
-      authorName: userId,
+      authorId: participantId,
+      authorName: displayName,
       text: trimmedDraft,
       kind: 'self',
     })
@@ -509,10 +522,10 @@ export default function P2PInterviewPage() {
 
   const handleLeaveSession = () => {
     sendPeerEvent('session-ended', {
-      reason: `${userId} ended the session.`,
+      reason: `${displayName} ended the session.`,
     })
 
-    exitToFeedback('You ended the P2P interview.', userId)
+    exitToFeedback('You ended the P2P interview.', displayName)
   }
 
   const summaryStatus = error
@@ -711,7 +724,7 @@ export default function P2PInterviewPage() {
               <div className="challenge-box">
                 <strong>Session Roles</strong>
                 <div className="p2p-role-summary">
-                  <span>You: {userId}</span>
+                  <span>You: {displayName}</span>
                   <span>{isInterviewer ? 'Interviewer' : 'Interviewee'}</span>
                 </div>
                 <div className="p2p-role-summary">
@@ -839,7 +852,7 @@ export default function P2PInterviewPage() {
                 <div className="p2p-video-card">
                   <video ref={localVideoRef} autoPlay muted playsInline />
                   <div className="p2p-video-meta">
-                    <span>{userId}</span>
+                    <span>{displayName}</span>
                     <span>{videoEnabled ? 'Camera on' : 'Camera off'}</span>
                   </div>
                 </div>
@@ -875,7 +888,7 @@ export default function P2PInterviewPage() {
                   {chatMessages.map((message) => (
                     <article
                       key={message.id}
-                      className={`chat-msg ${message.authorId === userId ? 'me' : ''} ${message.kind === 'system' ? 'p2p-chat-system' : ''}`}
+                      className={`chat-msg ${message.authorId === participantId ? 'me' : ''} ${message.kind === 'system' ? 'p2p-chat-system' : ''}`}
                     >
                       <div className="p2p-chat-author">{message.authorName}</div>
                       <p className="chat-copy">{message.text}</p>
