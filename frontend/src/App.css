@@ -384,14 +384,480 @@
   margin-top: 0.8rem;
 }
 
+.structure-list {
+  margin-top: 0.85rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.structure-item {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+}
+
+.structure-dot {
+  width: 9px;
+  height: 9px;
+  margin-top: 0.35rem;
+  border-radius: 50%;
+  background: #2dd8be;
+  box-shadow: 0 0 10px rgba(45, 216, 190, 0.75);
+}
+
+.structure-phase {
+  margin: 0;
+  color: #d8e4ea;
+  font-weight: 600;
+}
+
+.structure-meta {
+  margin: 0.2rem 0 0;
+  color: #8fa2ad;
+  font-size: 0.84rem;
+}
+
+.session-pill,
+.timer-pill,
+.p2p-status-pill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #24333a;
+  border-radius: 999px;
+  padding: 0.42rem 0.8rem;
+  background: rgba(11, 17, 21, 0.88);
+  color: #c4d3da;
+  font-size: 0.83rem;
+  line-height: 1;
+}
+
+.p2p-status-pill.error {
+  border-color: rgba(196, 83, 83, 0.5);
+  color: #ffbcbc;
+}
+
+.header-title {
+  margin: 0;
+  color: #dfe9ee;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.header-status {
+  margin: 0.25rem 0 0;
+  color: #75dbc9;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.prompt-copy,
+.chat-copy {
+  margin: 0.5rem 0 0;
+  color: #adc0ca;
+  line-height: 1.6;
+}
+
+.p2p-lobby-shell {
+  max-width: 1180px;
+}
+
+.p2p-lobby-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.95fr);
+}
+
+.p2p-lobby-card {
+  padding: 1.4rem;
+}
+
+.p2p-lobby-card--secondary {
+  background:
+    radial-gradient(circle at top right, rgba(31, 171, 148, 0.18), transparent 42%),
+    rgba(10, 13, 16, 0.92);
+}
+
+.p2p-lobby-title {
+  margin: 1rem 0 0.75rem;
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.05;
+}
+
+.p2p-lobby-copy {
+  margin: 0;
+  max-width: 58ch;
+  color: #90a4ae;
+  line-height: 1.7;
+}
+
+.p2p-form-grid {
+  margin-top: 1.5rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.p2p-field {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.p2p-field span {
+  color: #c7d6dd;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.p2p-inline-input {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.p2p-role-grid {
+  margin-top: 1.25rem;
+  display: grid;
+  gap: 0.9rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.p2p-role-card {
+  border: 1px solid #243038;
+  border-radius: 16px;
+  padding: 1rem;
+  background: rgba(10, 14, 18, 0.95);
+  color: #d6e2e8;
+  text-align: left;
+  display: grid;
+  gap: 0.45rem;
+  cursor: pointer;
+  transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.p2p-role-card span {
+  color: #8ea4af;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.p2p-role-card:hover,
+.p2p-role-card.active {
+  border-color: rgba(63, 214, 185, 0.58);
+  transform: translateY(-1px);
+  box-shadow: 0 18px 40px rgba(8, 18, 21, 0.32);
+}
+
+.p2p-lobby-actions {
+  justify-content: flex-start;
+}
+
+.p2p-problem-preview {
+  margin-top: 1.25rem;
+}
+
+.p2p-problem-preview p:first-of-type {
+  margin: 0.4rem 0 0;
+  color: #d9e6ec;
+  font-weight: 700;
+}
+
+.p2p-container {
+  max-width: 100%;
+}
+
+.p2p-top-nav {
+  margin-bottom: 1rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.p2p-top-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.p2p-banner {
+  margin-bottom: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.p2p-banner p {
+  margin: 0.35rem 0 0;
+}
+
+.p2p-banner--interactive {
+  border-color: rgba(52, 199, 174, 0.45);
+}
+
+.p2p-workspace {
+  display: flex;
+  align-items: stretch;
+  min-height: calc(100vh - 185px);
+  gap: 0;
+}
+
+.p2p-pane {
+  min-width: 0;
+}
+
+.p2p-pane--center {
+  flex: 1 1 auto;
+}
+
+.p2p-pane-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.p2p-pane-body {
+  height: calc(100% - 64px);
+}
+
+.p2p-role-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: #bfd0d8;
+  margin-top: 0.65rem;
+  font-size: 0.88rem;
+}
+
+.p2p-problem-textarea {
+  min-height: 260px;
+  resize: vertical;
+  border: 1px solid #28343c;
+  border-radius: 12px;
+  background: #0b1014;
+  color: #dbe7ed;
+  padding: 0.9rem 1rem;
+  line-height: 1.65;
+  font: inherit;
+}
+
+.p2p-divider {
+  width: 12px;
+  border: 0;
+  padding: 0;
+  margin: 0 0.2rem;
+  background: transparent;
+  cursor: col-resize;
+  position: relative;
+}
+
+.p2p-divider::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 4px;
+  height: 62px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(46, 215, 188, 0.15), rgba(46, 215, 188, 0.55), rgba(46, 215, 188, 0.15));
+}
+
+.p2p-editor-shell {
+  flex: 1 1 auto;
+  border-top: 1px solid #1f2a30;
+  border-bottom: 1px solid #1f2a30;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 20%),
+    #080d11;
+}
+
+.p2p-editor {
+  width: 100%;
+  min-height: 500px;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  color: #bfd1db;
+  padding: 1.1rem 1.2rem;
+  font: 500 0.93rem/1.65 "IBM Plex Mono", "Fira Code", Consolas, monospace;
+}
+
+.p2p-video-grid {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.p2p-video-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #22323a;
+  border-radius: 14px;
+  min-height: 190px;
+  background:
+    radial-gradient(circle at top left, rgba(35, 155, 134, 0.28), transparent 34%),
+    #081015;
+}
+
+.p2p-video-card video {
+  display: block;
+  width: 100%;
+  height: 190px;
+  object-fit: cover;
+  background: #05090d;
+}
+
+.p2p-video-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.8rem 0.9rem 0.95rem;
+  color: #e0ebef;
+  font-size: 0.86rem;
+}
+
+.p2p-video-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1.4rem;
+  text-align: center;
+  color: #a4bac4;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  background: rgba(5, 9, 13, 0.72);
+}
+
+.p2p-control-row {
+  flex-wrap: wrap;
+}
+
+.p2p-control-off {
+  border-color: rgba(191, 84, 84, 0.45);
+  color: #ffc1c1;
+}
+
+.p2p-chat-shell {
+  display: grid;
+  gap: 0.85rem;
+  height: 100%;
+}
+
+.p2p-chat-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+  color: #c3d5db;
+}
+
+.p2p-chat-list {
+  min-height: 250px;
+  max-height: 250px;
+}
+
+.p2p-chat-system {
+  border-color: rgba(80, 103, 112, 0.5);
+  background: rgba(18, 24, 28, 0.92);
+}
+
+.p2p-chat-author {
+  color: #72dbc9;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.p2p-chat-form {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.feedback-form-grid {
+  margin-top: 1rem;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.feedback-section {
+  border: 1px solid #223037;
+  border-radius: 14px;
+  background: rgba(10, 15, 18, 0.92);
+  padding: 1rem;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.feedback-section h3 {
+  margin: 0;
+}
+
+.feedback-rating-row {
+  display: grid;
+  gap: 0.45rem;
+  color: #c5d7dd;
+}
+
+.feedback-range-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+.feedback-range {
+  width: 100%;
+  accent-color: #26d8bb;
+}
+
+.feedback-textarea {
+  min-height: 140px;
+  resize: vertical;
+  border: 1px solid #28343c;
+  border-radius: 12px;
+  background: #0b1014;
+  color: #dbe7ed;
+  padding: 0.85rem 0.95rem;
+  line-height: 1.6;
+  font: inherit;
+}
+
+.feedback-summary {
+  margin-top: 1rem;
+}
+
 @media (max-width: 980px) {
   .feature-grid,
   .leaders-grid,
-  .report-grid {
+  .report-grid,
+  .p2p-lobby-grid,
+  .feedback-form-grid,
+  .p2p-role-grid {
     grid-template-columns: 1fr;
   }
 
   .interview-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .p2p-workspace {
+    flex-direction: column;
+  }
+
+  .p2p-pane--left,
+  .p2p-pane--right {
+    width: 100% !important;
+  }
+
+  .p2p-divider {
+    display: none;
+  }
+
+  .p2p-chat-form,
+  .p2p-inline-input {
     grid-template-columns: 1fr;
   }
 

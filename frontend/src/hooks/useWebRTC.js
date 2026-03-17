@@ -1,273 +1,469 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { io } from 'socket.io-client';
-import Peer from 'peerjs';
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { io } from 'socket.io-client'
+import Peer from 'peerjs'
 
-const SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL || 'http://localhost:9000';
-const PEERJS_URL = import.meta.env.VITE_PEERJS_URL || 'http://localhost:9001';
+const SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL || 'http://localhost:9000'
+const PEERJS_URL = import.meta.env.VITE_PEERJS_URL || 'http://localhost:9001'
+const DEFAULT_REMOTE_MEDIA_STATE = { audio: true, video: true }
 
-/**
- * useWebRTC — manages the full lifecycle of a WebRTC video call.
- *
- * @param {string} roomId   - Interview room ID
- * @param {string} userId   - Current user's ID
- * @returns {object}        - refs, state, and controls for the call
- *
- * Usage:
- *   const {
- *     localVideoRef, remoteVideoRef,
- *     isConnected, audioEnabled, videoEnabled,
- *     toggleAudio, toggleVideo, leaveRoom, error
- *   } = useWebRTC('room-123', 'user-456');
- *
- *   <video ref={localVideoRef} autoPlay muted playsInline />
- *   <video ref={remoteVideoRef} autoPlay playsInline />
- */
+function getPeerConfig() {
+  const peerUrl = new URL(PEERJS_URL)
+
+  return {
+    host: peerUrl.hostname,
+    port: peerUrl.port,
+    path: '/peerjs',
+    secure: peerUrl.protocol === 'https:',
+  }
+}
+
 export function useWebRTC(roomId, userId) {
-    const [isConnected, setIsConnected] = useState(false);
-    const [remoteUserId, setRemoteUserId] = useState(null);
-    const [audioEnabled, setAudioEnabled] = useState(true);
-    const [videoEnabled, setVideoEnabled] = useState(true);
-    const [error, setError] = useState(null);
+  const [isConnected, setIsConnected] = useState(false)
+  const [remoteUserId, setRemoteUserId] = useState(null)
+  const [audioEnabled, setAudioEnabled] = useState(true)
+  const [videoEnabled, setVideoEnabled] = useState(true)
+  const [remoteMediaState, setRemoteMediaState] = useState(DEFAULT_REMOTE_MEDIA_STATE)
+  const [participantCount, setParticipantCount] = useState(1)
+  const [isDataChannelOpen, setIsDataChannelOpen] = useState(false)
+  const [lastPeerEvent, setLastPeerEvent] = useState(null)
+  const [error, setError] = useState(null)
 
-    const localVideoRef = useRef(null);
-    const remoteVideoRef = useRef(null);
-    const peerRef = useRef(null);
-    const socketRef = useRef(null);
-    const localStreamRef = useRef(null);
-    const currentCallRef = useRef(null);
+  const localVideoRef = useRef(null)
+  const remoteVideoRef = useRef(null)
+  const peerRef = useRef(null)
+  const socketRef = useRef(null)
+  const localStreamRef = useRef(null)
+  const currentCallRef = useRef(null)
+  const dataConnectionRef = useRef(null)
+  const peerEventIdRef = useRef(0)
 
-    // ── Get local media stream ──────────────────────────────────
-    const getLocalStream = useCallback(async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: true,
-                audio: true,
-            });
-            localStreamRef.current = stream;
-            if (localVideoRef.current) {
-                localVideoRef.current.srcObject = stream;
-            }
-            return stream;
-        } catch (err) {
-            setError('Camera/microphone access denied.');
-            console.error('getUserMedia error:', err);
-            return null;
+  const publishPeerEvent = useCallback((message) => {
+    peerEventIdRef.current += 1
+
+    setLastPeerEvent({
+      id: peerEventIdRef.current,
+      ...message,
+    })
+  }, [])
+
+  const clearRemoteMedia = useCallback(() => {
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null
+    }
+
+    setIsConnected(false)
+    setIsDataChannelOpen(false)
+    setRemoteUserId(null)
+    setParticipantCount(1)
+    setAudioEnabled(true)
+    setVideoEnabled(true)
+    setRemoteMediaState(DEFAULT_REMOTE_MEDIA_STATE)
+    setError(null)
+  }, [])
+
+  const getLocalStream = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      })
+
+      localStreamRef.current = stream
+
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream
+      }
+
+      return stream
+    } catch {
+      setError('Camera or microphone access was denied.')
+      return null
+    }
+  }, [])
+
+  const attachRemoteStream = useCallback((remoteStream) => {
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream
+    }
+
+    setIsConnected(true)
+  }, [])
+
+  const bindCallEvents = useCallback(
+    (call) => {
+      currentCallRef.current = call
+
+      call.on('stream', attachRemoteStream)
+
+      call.on('close', () => {
+        if (currentCallRef.current === call) {
+          currentCallRef.current = null
         }
-    }, []);
 
-    // ── Call a remote peer ──────────────────────────────────────
-    const callPeer = useCallback((remotePeerId, stream) => {
-        if (!peerRef.current || !stream) return;
-
-        console.log(`Calling peer: ${remotePeerId}`);
-        const call = peerRef.current.call(remotePeerId, stream);
-        currentCallRef.current = call;
-
-        call.on('stream', (remoteStream) => {
-            if (remoteVideoRef.current) {
-                remoteVideoRef.current.srcObject = remoteStream;
-            }
-            setIsConnected(true);
-        });
-
-        call.on('close', () => {
-            setIsConnected(false);
-            if (remoteVideoRef.current) {
-                remoteVideoRef.current.srcObject = null;
-            }
-        });
-
-        call.on('error', (err) => {
-            console.error('Call error:', err);
-            setError('Call failed.');
-        });
-    }, []);
-
-    // ── Answer an incoming call ─────────────────────────────────
-    const answerCall = useCallback((call, stream) => {
-        console.log('Answering incoming call...');
-        call.answer(stream);
-        currentCallRef.current = call;
-
-        call.on('stream', (remoteStream) => {
-            if (remoteVideoRef.current) {
-                remoteVideoRef.current.srcObject = remoteStream;
-            }
-            setIsConnected(true);
-        });
-
-        call.on('close', () => {
-            setIsConnected(false);
-            if (remoteVideoRef.current) {
-                remoteVideoRef.current.srcObject = null;
-            }
-        });
-    }, []);
-
-    // ── Main effect: init Peer + Socket ─────────────────────────
-    useEffect(() => {
-        if (!roomId || !userId) return;
-
-        let destroyed = false;
-
-        const init = async () => {
-            // 1. Get camera/mic
-            const stream = await getLocalStream();
-            if (!stream || destroyed) return;
-
-            // 2. Fetch ICE server config from signaling service
-            let iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
-            try {
-                const res = await fetch(`${SIGNALING_URL}/api/ice-servers`);
-                const data = await res.json();
-                if (data.iceServers) iceServers = data.iceServers;
-            } catch {
-                console.warn('Could not fetch ICE servers, using default STUN');
-            }
-
-            // 3. Initialize PeerJS (connects to PeerJS server on the signaling service)
-            const peer = new Peer(undefined, {
-                host: new URL(PEERJS_URL).hostname,
-                port: new URL(PEERJS_URL).port,
-                path: '/peerjs',
-                secure: PEERJS_URL.startsWith('https'),
-                config: { iceServers },
-            });
-            peerRef.current = peer;
-
-            peer.on('open', (peerId) => {
-                if (destroyed) return;
-                console.log(`PeerJS open — my ID: ${peerId}`);
-
-                // 4. Connect to Socket.io signaling
-                const socket = io(SIGNALING_URL, {
-                    transports: ['websocket'],
-                    withCredentials: true,
-                });
-                socketRef.current = socket;
-
-                socket.on('connect', () => {
-                    console.log('Socket connected, joining room...');
-                    socket.emit('join-room', { roomId, userId, peerId });
-                });
-
-                // When another user joins → WE call THEM
-                socket.on('user-connected', ({ peerId: remotePeerId, userId: remoteUid }) => {
-                    console.log(`User connected: ${remoteUid} (peer: ${remotePeerId})`);
-                    setRemoteUserId(remoteUid);
-                    callPeer(remotePeerId, stream);
-                });
-
-                // When the other user leaves
-                socket.on('user-disconnected', ({ userId: remoteUid }) => {
-                    console.log(`User disconnected: ${remoteUid}`);
-                    setIsConnected(false);
-                    setRemoteUserId(null);
-                    if (currentCallRef.current) {
-                        currentCallRef.current.close();
-                        currentCallRef.current = null;
-                    }
-                    if (remoteVideoRef.current) {
-                        remoteVideoRef.current.srcObject = null;
-                    }
-                });
-
-                // Media toggle from remote peer
-                socket.on('media-toggled', ({ userId: uid, type, enabled }) => {
-                    console.log(`${uid} toggled ${type}: ${enabled}`);
-                    // Surface this in state for UI indicators if needed
-                });
-
-                // Room full
-                socket.on('room-full', ({ message }) => {
-                    setError(message);
-                });
-
-                // Generic error
-                socket.on('error', ({ message }) => {
-                    setError(message);
-                });
-            });
-
-            // 5. Listen for incoming calls (the OTHER peer calls US)
-            peer.on('call', (call) => {
-                answerCall(call, stream);
-            });
-
-            peer.on('error', (err) => {
-                console.error('PeerJS error:', err);
-                setError(`PeerJS: ${err.type}`);
-            });
-        };
-
-        init();
-
-        // ── Cleanup ───────────────────────────────────────────────
-        return () => {
-            destroyed = true;
-            if (currentCallRef.current) currentCallRef.current.close();
-            if (socketRef.current) socketRef.current.disconnect();
-            if (peerRef.current) peerRef.current.destroy();
-            if (localStreamRef.current) {
-                localStreamRef.current.getTracks().forEach((t) => t.stop());
-            }
-            setIsConnected(false);
-            setRemoteUserId(null);
-        };
-    }, [roomId, userId, getLocalStream, callPeer, answerCall]);
-
-    // ── Controls ────────────────────────────────────────────────
-    const toggleAudio = useCallback(() => {
-        if (!localStreamRef.current) return;
-        const track = localStreamRef.current.getAudioTracks()[0];
-        if (track) {
-            track.enabled = !track.enabled;
-            setAudioEnabled(track.enabled);
-            socketRef.current?.emit('toggle-media', {
-                roomId,
-                userId,
-                type: 'audio',
-                enabled: track.enabled,
-            });
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = null
         }
-    }, [roomId, userId]);
 
-    const toggleVideo = useCallback(() => {
-        if (!localStreamRef.current) return;
-        const track = localStreamRef.current.getVideoTracks()[0];
-        if (track) {
-            track.enabled = !track.enabled;
-            setVideoEnabled(track.enabled);
-            socketRef.current?.emit('toggle-media', {
-                roomId,
-                userId,
-                type: 'video',
-                enabled: track.enabled,
-            });
+        setIsConnected(false)
+      })
+
+      call.on('error', () => {
+        setError('The video connection failed.')
+      })
+    },
+    [attachRemoteStream],
+  )
+
+  const bindDataConnection = useCallback(
+    (connection) => {
+      if (!connection) {
+        return
+      }
+
+      if (dataConnectionRef.current && dataConnectionRef.current !== connection) {
+        dataConnectionRef.current.close()
+      }
+
+      dataConnectionRef.current = connection
+
+      connection.on('open', () => {
+        setIsDataChannelOpen(true)
+      })
+
+      connection.on('data', (message) => {
+        if (!message || typeof message !== 'object' || !message.type) {
+          return
         }
-    }, [roomId, userId]);
 
-    const leaveRoom = useCallback(() => {
-        if (currentCallRef.current) currentCallRef.current.close();
-        if (socketRef.current) socketRef.current.disconnect();
-        if (peerRef.current) peerRef.current.destroy();
-        if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach((t) => t.stop());
+        publishPeerEvent(message)
+      })
+
+      connection.on('close', () => {
+        if (dataConnectionRef.current === connection) {
+          dataConnectionRef.current = null
         }
-        setIsConnected(false);
-        setRemoteUserId(null);
-    }, []);
 
-    return {
-        localVideoRef,
-        remoteVideoRef,
-        isConnected,
-        remoteUserId,
-        audioEnabled,
-        videoEnabled,
-        error,
-        toggleAudio,
-        toggleVideo,
-        leaveRoom,
-    };
+        setIsDataChannelOpen(false)
+      })
+
+      connection.on('error', () => {
+        setError('The peer sync channel failed.')
+      })
+    },
+    [publishPeerEvent],
+  )
+
+  const callPeer = useCallback(
+    (remotePeerId, stream) => {
+      if (!peerRef.current || !stream) {
+        return
+      }
+
+      if (currentCallRef.current) {
+        currentCallRef.current.close()
+      }
+
+      const call = peerRef.current.call(remotePeerId, stream)
+      bindCallEvents(call)
+    },
+    [bindCallEvents],
+  )
+
+  const connectDataChannel = useCallback(
+    (remotePeerId) => {
+      if (!peerRef.current) {
+        return
+      }
+
+      if (dataConnectionRef.current?.peer === remotePeerId && dataConnectionRef.current.open) {
+        return
+      }
+
+      const connection = peerRef.current.connect(remotePeerId, {
+        reliable: true,
+      })
+
+      bindDataConnection(connection)
+    },
+    [bindDataConnection],
+  )
+
+  const answerCall = useCallback(
+    (call, stream) => {
+      call.answer(stream)
+      bindCallEvents(call)
+    },
+    [bindCallEvents],
+  )
+
+  useEffect(() => {
+    if (!roomId || !userId) {
+      return undefined
+    }
+
+    let destroyed = false
+
+    const init = async () => {
+      const stream = await getLocalStream()
+
+      if (!stream || destroyed) {
+        return
+      }
+
+      let iceServers = [{ urls: 'stun:stun.l.google.com:19302' }]
+
+      try {
+        const response = await fetch(`${SIGNALING_URL}/api/ice-servers`)
+        const data = await response.json()
+
+        if (Array.isArray(data.iceServers) && data.iceServers.length > 0) {
+          iceServers = data.iceServers
+        }
+      } catch {
+        // Default STUN is enough for local development.
+      }
+
+      const peer = new Peer(undefined, {
+        ...getPeerConfig(),
+        config: { iceServers },
+      })
+
+      peerRef.current = peer
+
+      peer.on('open', (peerId) => {
+        if (destroyed) {
+          return
+        }
+
+        const socket = io(SIGNALING_URL, {
+          transports: ['websocket'],
+          withCredentials: true,
+        })
+
+        socketRef.current = socket
+
+        socket.on('connect', () => {
+          socket.emit('join-room', { roomId, userId, peerId })
+        })
+
+        socket.on('room-joined', ({ participants = [] }) => {
+          setParticipantCount(Math.max(participants.length, 1))
+
+          const remoteParticipant = participants.find((participant) => participant.userId !== userId)
+
+          if (remoteParticipant?.userId) {
+            setRemoteUserId(remoteParticipant.userId)
+          }
+        })
+
+        socket.on('user-connected', ({ peerId: remotePeerId, userId: remoteUid, participants = [] }) => {
+          setRemoteUserId(remoteUid)
+          setParticipantCount(Math.max(participants.length, 2))
+          callPeer(remotePeerId, stream)
+          connectDataChannel(remotePeerId)
+        })
+
+        socket.on('user-disconnected', ({ userId: remoteUid }) => {
+          if (currentCallRef.current) {
+            currentCallRef.current.close()
+          }
+
+          if (dataConnectionRef.current) {
+            dataConnectionRef.current.close()
+          }
+
+          clearRemoteMedia()
+
+          publishPeerEvent({
+            type: 'peer-disconnected',
+            senderId: remoteUid,
+            timestamp: Date.now(),
+          })
+        })
+
+        socket.on('media-toggled', ({ type, enabled }) => {
+          if (!type) {
+            return
+          }
+
+          setRemoteMediaState((currentState) => ({
+            ...currentState,
+            [type]: enabled,
+          }))
+        })
+
+        socket.on('room-full', ({ message }) => {
+          setError(message)
+        })
+
+        socket.on('error', ({ message }) => {
+          setError(message)
+        })
+      })
+
+      peer.on('call', (call) => {
+        answerCall(call, stream)
+      })
+
+      peer.on('connection', (connection) => {
+        bindDataConnection(connection)
+      })
+
+      peer.on('error', (peerError) => {
+        setError(`PeerJS: ${peerError.type}`)
+      })
+    }
+
+    init()
+
+    return () => {
+      destroyed = true
+
+      if (currentCallRef.current) {
+        currentCallRef.current.close()
+        currentCallRef.current = null
+      }
+
+      if (dataConnectionRef.current) {
+        dataConnectionRef.current.close()
+        dataConnectionRef.current = null
+      }
+
+      if (socketRef.current) {
+        socketRef.current.disconnect()
+        socketRef.current = null
+      }
+
+      if (peerRef.current) {
+        peerRef.current.destroy()
+        peerRef.current = null
+      }
+
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((track) => track.stop())
+        localStreamRef.current = null
+      }
+
+      clearRemoteMedia()
+    }
+  }, [
+    answerCall,
+    bindDataConnection,
+    callPeer,
+    clearRemoteMedia,
+    connectDataChannel,
+    getLocalStream,
+    publishPeerEvent,
+    roomId,
+    userId,
+  ])
+
+  const toggleAudio = useCallback(() => {
+    if (!localStreamRef.current) {
+      return
+    }
+
+    const track = localStreamRef.current.getAudioTracks()[0]
+
+    if (!track) {
+      return
+    }
+
+    track.enabled = !track.enabled
+    setAudioEnabled(track.enabled)
+
+    socketRef.current?.emit('toggle-media', {
+      roomId,
+      userId,
+      type: 'audio',
+      enabled: track.enabled,
+    })
+  }, [roomId, userId])
+
+  const toggleVideo = useCallback(() => {
+    if (!localStreamRef.current) {
+      return
+    }
+
+    const track = localStreamRef.current.getVideoTracks()[0]
+
+    if (!track) {
+      return
+    }
+
+    track.enabled = !track.enabled
+    setVideoEnabled(track.enabled)
+
+    socketRef.current?.emit('toggle-media', {
+      roomId,
+      userId,
+      type: 'video',
+      enabled: track.enabled,
+    })
+  }, [roomId, userId])
+
+  const sendPeerEvent = useCallback(
+    (type, payload = {}) => {
+      if (!type || !dataConnectionRef.current?.open) {
+        return false
+      }
+
+      dataConnectionRef.current.send({
+        type,
+        payload,
+        senderId: userId,
+        timestamp: Date.now(),
+      })
+
+      return true
+    },
+    [userId],
+  )
+
+  const leaveRoom = useCallback(() => {
+    if (currentCallRef.current) {
+      currentCallRef.current.close()
+      currentCallRef.current = null
+    }
+
+    if (dataConnectionRef.current) {
+      dataConnectionRef.current.close()
+      dataConnectionRef.current = null
+    }
+
+    if (socketRef.current) {
+      socketRef.current.disconnect()
+      socketRef.current = null
+    }
+
+    if (peerRef.current) {
+      peerRef.current.destroy()
+      peerRef.current = null
+    }
+
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop())
+      localStreamRef.current = null
+    }
+
+    clearRemoteMedia()
+  }, [clearRemoteMedia])
+
+  return {
+    localVideoRef,
+    remoteVideoRef,
+    isConnected,
+    remoteUserId,
+    audioEnabled,
+    videoEnabled,
+    remoteMediaState,
+    participantCount,
+    isDataChannelOpen,
+    lastPeerEvent,
+    error,
+    toggleAudio,
+    toggleVideo,
+    sendPeerEvent,
+    leaveRoom,
+  }
 }

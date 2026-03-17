@@ -23,7 +23,7 @@ export default function IndustryLeadersPage() {
   }, [query])
 
   const handleStartInterview = (leader) => {
-    navigate('/ai-interview', {
+    navigate('/industry-leader-interview', {
       state: {
         interviewer: leader,
         roomId: `interview-${leader.id}`,

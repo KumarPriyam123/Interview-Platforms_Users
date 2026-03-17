@@ -31,6 +31,7 @@ export default function LandingPage() {
 
           <div className="hero-actions">
             <Link to="/industry-leaders" className="btn btn-primary">Get Started</Link>
+            <Link to="/p2p-interview" className="btn btn-ghost">Practice With Peer</Link>
             <Link to="/ai-interview" className="btn btn-ghost">Watch Demo</Link>
           </div>
         </section>
