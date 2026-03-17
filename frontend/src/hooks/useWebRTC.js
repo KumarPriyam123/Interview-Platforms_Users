@@ -5,6 +5,7 @@ import Peer from 'peerjs'
 const SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL || 'http://localhost:9000'
 const PEERJS_URL = import.meta.env.VITE_PEERJS_URL || 'http://localhost:9001'
 const DEFAULT_REMOTE_MEDIA_STATE = { audio: true, video: true }
+const SERVICE_RETRY_DELAY = 3000
 
 function getPeerConfig() {
   const peerUrl = new URL(PEERJS_URL)
@@ -36,10 +37,31 @@ export function useWebRTC(roomId, userId, displayName = userId) {
   const currentCallRef = useRef(null)
   const dataConnectionRef = useRef(null)
   const peerEventIdRef = useRef(0)
+  const retryTimeoutRef = useRef(null)
+  const [retryNonce, setRetryNonce] = useState(0)
+
+  const clearRetryTimeout = useCallback(() => {
+    if (retryTimeoutRef.current) {
+      window.clearTimeout(retryTimeoutRef.current)
+      retryTimeoutRef.current = null
+    }
+  }, [])
+
+  const scheduleRetry = useCallback(() => {
+    if (retryTimeoutRef.current) {
+      return
+    }
+
+    retryTimeoutRef.current = window.setTimeout(() => {
+      retryTimeoutRef.current = null
+      setRetryNonce((currentValue) => currentValue + 1)
+    }, SERVICE_RETRY_DELAY)
+  }, [])
 
   const setServiceOfflineError = useCallback(() => {
     setError(`WebRTC service is offline. Start webrtc-service on ${SIGNALING_URL} and ${PEERJS_URL}.`)
-  }, [])
+    scheduleRetry()
+  }, [scheduleRetry])
 
   const publishPeerEvent = useCallback((message) => {
     peerEventIdRef.current += 1
@@ -220,6 +242,9 @@ export function useWebRTC(roomId, userId, displayName = userId) {
         return
       }
 
+      clearRetryTimeout()
+      setError(null)
+
       const stream = await getLocalStream()
 
       if (!stream || destroyed) {
@@ -365,16 +390,19 @@ export function useWebRTC(roomId, userId, displayName = userId) {
         localStreamRef.current = null
       }
 
+      clearRetryTimeout()
       clearRemoteMedia()
     }
   }, [
     answerCall,
     bindDataConnection,
     callPeer,
+    clearRetryTimeout,
     clearRemoteMedia,
     connectDataChannel,
     getLocalStream,
     publishPeerEvent,
+    retryNonce,
     setServiceOfflineError,
     displayName,
     roomId,
@@ -469,8 +497,9 @@ export function useWebRTC(roomId, userId, displayName = userId) {
       localStreamRef.current = null
     }
 
+    clearRetryTimeout()
     clearRemoteMedia()
-  }, [clearRemoteMedia])
+  }, [clearRetryTimeout, clearRemoteMedia])
 
   return {
     localVideoRef,

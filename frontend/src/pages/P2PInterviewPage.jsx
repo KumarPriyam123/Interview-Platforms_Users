@@ -249,11 +249,9 @@ export default function P2PInterviewPage() {
         }
       } catch {
         if (!ignore) {
-          setSessionNotice('WebRTC signaling service is offline. Start webrtc-service and reload this room.')
-        }
-
-        if (intervalId) {
-          window.clearInterval(intervalId)
+          setSessionNotice((currentNotice) => (
+            currentNotice || 'WebRTC signaling service is offline. Start webrtc-service and wait a few seconds.'
+          ))
         }
       }
     }
