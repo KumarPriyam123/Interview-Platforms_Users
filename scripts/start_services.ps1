@@ -2,7 +2,8 @@
 param(
     [switch]$SkipPython,
     [switch]$SkipNode,
-    [switch]$SkipFrontend
+    [switch]$SkipFrontend,
+    [switch]$SkipWebRTC
 )
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -36,6 +37,13 @@ if (-not $SkipNode) {
 if (-not $SkipFrontend) {
     if (-not (Test-Path "$ProjectRoot\frontend\node_modules")) {
         Write-Host "[WARNING] Frontend dependencies not installed (frontend\node_modules missing)" -ForegroundColor Red
+        $SetupNeeded = $true
+    }
+}
+
+if (-not $SkipWebRTC) {
+    if (-not (Test-Path "$ProjectRoot\webrtc-service\node_modules")) {
+        Write-Host "[WARNING] WebRTC dependencies not installed (webrtc-service\node_modules missing)" -ForegroundColor Red
         $SetupNeeded = $true
     }
 }
@@ -104,14 +112,30 @@ if (-not $SkipNode) {
         "`$host.UI.RawUI.WindowTitle = 'Node.js Backend (3000)'; " + `
         "cd '$ProjectRoot\Backend'; " + `
         "`$env:PORT=3000; " + `
-        "npm run dev"
+        "npm.cmd run dev"
 
     Write-Host "  [OK] Node.js backend started" -ForegroundColor Green
     Write-Host ""
 }
 
 # =====================
-# 3. React Frontend
+# 3. WebRTC Signaling Service
+# =====================
+if (-not $SkipWebRTC) {
+    Write-Host "[WebRTC Signaling Service]" -ForegroundColor Yellow
+    Write-Host "  Starting Socket.io + PeerJS service (Ports 9000 / 9001)..." -ForegroundColor DarkGray
+
+    Start-Process powershell -ArgumentList "-NoExit", "-Command", `
+        "`$host.UI.RawUI.WindowTitle = 'WebRTC Signaling (9000/9001)'; " + `
+        "cd '$ProjectRoot\webrtc-service'; " + `
+        "npm.cmd start"
+
+    Write-Host "  [OK] WebRTC signaling service started" -ForegroundColor Green
+    Write-Host ""
+}
+
+# =====================
+# 4. React Frontend
 # =====================
 if (-not $SkipFrontend) {
     Write-Host "[React Frontend]" -ForegroundColor Yellow
@@ -120,7 +144,7 @@ if (-not $SkipFrontend) {
     Start-Process powershell -ArgumentList "-NoExit", "-Command", `
         "`$host.UI.RawUI.WindowTitle = 'Frontend (5173)'; " + `
         "cd '$ProjectRoot\frontend'; " + `
-        "npm run dev"
+        "npm.cmd run dev"
 
     Write-Host "  [OK] Frontend started" -ForegroundColor Green
     Write-Host ""
@@ -146,12 +170,17 @@ if (-not $SkipNode) {
 if (-not $SkipFrontend) {
     Write-Host "    React Frontend:         http://localhost:5173" -ForegroundColor White
 }
+if (-not $SkipWebRTC) {
+    Write-Host "    WebRTC Health:          http://localhost:9000/health" -ForegroundColor White
+    Write-Host "    PeerJS Endpoint:        http://localhost:9001/peerjs" -ForegroundColor White
+}
 
 Write-Host ""
 Write-Host "  Flags:" -ForegroundColor DarkGray
 Write-Host "    -SkipPython    Skip Python microservices" -ForegroundColor DarkGray
 Write-Host "    -SkipNode      Skip Node.js backend" -ForegroundColor DarkGray
 Write-Host "    -SkipFrontend  Skip React frontend" -ForegroundColor DarkGray
+Write-Host "    -SkipWebRTC    Skip WebRTC signaling service" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  To stop: close each service's PowerShell window (or Ctrl+C)" -ForegroundColor DarkGray
 Write-Host ""

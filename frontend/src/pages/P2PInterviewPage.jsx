@@ -225,6 +225,7 @@ export default function P2PInterviewPage() {
     }
 
     let ignore = false
+    let intervalId
 
     const pollRoomState = async () => {
       try {
@@ -247,13 +248,19 @@ export default function P2PInterviewPage() {
           exitToFeedback('The other peer is no longer active in this room.')
         }
       } catch {
-        // Polling is only a fallback for missed disconnect events.
+        if (!ignore) {
+          setSessionNotice('WebRTC signaling service is offline. Start webrtc-service and reload this room.')
+        }
+
+        if (intervalId) {
+          window.clearInterval(intervalId)
+        }
       }
     }
 
     pollRoomState()
 
-    const intervalId = window.setInterval(pollRoomState, ROOM_POLL_INTERVAL)
+    intervalId = window.setInterval(pollRoomState, ROOM_POLL_INTERVAL)
 
     return () => {
       ignore = true

@@ -2,7 +2,8 @@
 param(
     [switch]$SkipPython,
     [switch]$SkipNode,
-    [switch]$SkipFrontend
+    [switch]$SkipFrontend,
+    [switch]$SkipWebRTC
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,30 +24,34 @@ Write-Host "[Prerequisites] Checking installed tools..." -ForegroundColor Yellow
 $MissingTools = @()
 
 # Check Python
-try {
-    $PythonVersion = python --version 2>&1
-    Write-Host "  [OK] $PythonVersion" -ForegroundColor Green
-} catch {
-    $MissingTools += "Python"
-    Write-Host "  [MISSING] Python - https://www.python.org/downloads/" -ForegroundColor Red
+if (-not $SkipPython) {
+    try {
+        $PythonVersion = python --version 2>&1
+        Write-Host "  [OK] $PythonVersion" -ForegroundColor Green
+    } catch {
+        $MissingTools += "Python"
+        Write-Host "  [MISSING] Python - https://www.python.org/downloads/" -ForegroundColor Red
+    }
 }
 
 # Check Node.js
-try {
-    $NodeVersion = node --version 2>&1
-    Write-Host "  [OK] Node.js $NodeVersion" -ForegroundColor Green
-} catch {
-    $MissingTools += "Node.js"
-    Write-Host "  [MISSING] Node.js - https://nodejs.org/" -ForegroundColor Red
-}
+if (-not $SkipNode -or -not $SkipFrontend -or -not $SkipWebRTC) {
+    try {
+        $NodeVersion = node --version 2>&1
+        Write-Host "  [OK] Node.js $NodeVersion" -ForegroundColor Green
+    } catch {
+        $MissingTools += "Node.js"
+        Write-Host "  [MISSING] Node.js - https://nodejs.org/" -ForegroundColor Red
+    }
 
-# Check npm
-try {
-    $NpmVersion = npm --version 2>&1
-    Write-Host "  [OK] npm $NpmVersion" -ForegroundColor Green
-} catch {
-    $MissingTools += "npm"
-    Write-Host "  [MISSING] npm (comes with Node.js)" -ForegroundColor Red
+    # Check npm
+    try {
+        $NpmVersion = npm.cmd --version 2>&1
+        Write-Host "  [OK] npm $NpmVersion" -ForegroundColor Green
+    } catch {
+        $MissingTools += "npm"
+        Write-Host "  [MISSING] npm (comes with Node.js)" -ForegroundColor Red
+    }
 }
 
 if ($MissingTools.Count -gt 0) {
@@ -98,7 +103,7 @@ if (-not $SkipNode) {
     }
 
     Push-Location $BackendDir
-    npm install --silent 2>&1 | Out-Null
+    npm.cmd install --silent 2>&1 | Out-Null
     Pop-Location
     Write-Host "  [DONE] Node.js backend dependencies installed" -ForegroundColor Green
     Write-Host ""
@@ -120,14 +125,36 @@ if (-not $SkipFrontend) {
     }
 
     Push-Location $FrontendDir
-    npm install --silent 2>&1 | Out-Null
+    npm.cmd install --silent 2>&1 | Out-Null
     Pop-Location
     Write-Host "  [DONE] Frontend dependencies installed" -ForegroundColor Green
     Write-Host ""
 }
 
 # =====================
-# 4. Environment Files
+# 4. WebRTC Signaling Service Dependencies
+# =====================
+if (-not $SkipWebRTC) {
+    $StepNumber++
+    Write-Host "[$StepNumber] Installing WebRTC signaling dependencies..." -ForegroundColor Yellow
+
+    $WebRTCDir = "$ProjectRoot\webrtc-service"
+
+    if (Test-Path "$WebRTCDir\node_modules") {
+        Write-Host "  node_modules exists. Running npm install to update..." -ForegroundColor DarkGray
+    } else {
+        Write-Host "  Installing npm packages..." -ForegroundColor DarkGray
+    }
+
+    Push-Location $WebRTCDir
+    npm.cmd install --silent 2>&1 | Out-Null
+    Pop-Location
+    Write-Host "  [DONE] WebRTC signaling dependencies installed" -ForegroundColor Green
+    Write-Host ""
+}
+
+# =====================
+# 5. Environment Files
 # =====================
 $StepNumber++
 Write-Host "[$StepNumber] Setting up environment files..." -ForegroundColor Yellow
@@ -160,7 +187,7 @@ Write-Host "  [DONE] Environment files ready" -ForegroundColor Green
 Write-Host ""
 
 # =====================
-# 5. Data Directories
+# 6. Data Directories
 # =====================
 $StepNumber++
 Write-Host "[$StepNumber] Creating data directories..." -ForegroundColor Yellow
@@ -186,6 +213,7 @@ Write-Host "  Components installed:" -ForegroundColor White
 if (-not $SkipPython)   { Write-Host "    [+] Python Backend   (venv + FastAPI packages)" -ForegroundColor Green }
 if (-not $SkipNode)     { Write-Host "    [+] Node.js Backend  (Express + dependencies)" -ForegroundColor Green }
 if (-not $SkipFrontend) { Write-Host "    [+] React Frontend   (Vite + dependencies)" -ForegroundColor Green }
+if (-not $SkipWebRTC)   { Write-Host "    [+] WebRTC Service   (Socket.io + PeerJS dependencies)" -ForegroundColor Green }
 Write-Host "    [+] Environment files (.env)" -ForegroundColor Green
 Write-Host "    [+] Data directories" -ForegroundColor Green
 Write-Host ""

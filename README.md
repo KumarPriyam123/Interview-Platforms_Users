@@ -1,6 +1,6 @@
 # Interview Platform
 
-A modular platform for resume parsing and interviewer matching, with a Node.js/Express backend, Python FastAPI microservices, and a React frontend.
+A modular platform for resume parsing and interviewer matching, with a Node.js/Express backend, Python FastAPI microservices, a React frontend, and a dedicated WebRTC signaling service for live P2P interviews.
 
 ## Repository Structure
 
@@ -61,6 +61,19 @@ Each service launches in its own titled PowerShell window:
 | Profile Matching | 8002 | Python FastAPI |
 | Node.js Backend | 3000 | Express |
 | React Frontend | 5173 | Vite |
+| WebRTC Signaling | 9000 / 9001 | Socket.io + PeerJS |
+
+### 2a. Start Just The P2P Interview Stack
+
+```powershell
+npm run dev:p2p
+```
+
+This starts:
+- `frontend` on `http://localhost:5173`
+- `webrtc-service` on `http://localhost:9000` and `http://localhost:9001`
+
+Use this when you only need the live peer interview flow.
 
 **Skip flags** (optional):
 ```powershell
@@ -75,6 +88,7 @@ Each service launches in its own titled PowerShell window:
 - **Profile Matching**: http://localhost:8002/docs
 - **Node.js Backend**: http://localhost:3000/health
 - **React Frontend**: http://localhost:5173
+- **WebRTC Health**: http://localhost:9000/health
 
 ## API Endpoints
 

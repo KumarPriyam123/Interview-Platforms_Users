@@ -82,6 +82,7 @@ async function tryRedis() {
         };
 
         const testClient = new Redis(redisOptions);
+        testClient.on('error', () => {});
         await testClient.connect();
         await testClient.ping();
         await testClient.quit();

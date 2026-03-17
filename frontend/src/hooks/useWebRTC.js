@@ -37,6 +37,10 @@ export function useWebRTC(roomId, userId, displayName = userId) {
   const dataConnectionRef = useRef(null)
   const peerEventIdRef = useRef(0)
 
+  const setServiceOfflineError = useCallback(() => {
+    setError(`WebRTC service is offline. Start webrtc-service on ${SIGNALING_URL} and ${PEERJS_URL}.`)
+  }, [])
+
   const publishPeerEvent = useCallback((message) => {
     peerEventIdRef.current += 1
 
@@ -204,6 +208,18 @@ export function useWebRTC(roomId, userId, displayName = userId) {
     let destroyed = false
 
     const init = async () => {
+      try {
+        const healthResponse = await fetch(`${SIGNALING_URL}/health`)
+
+        if (!healthResponse.ok) {
+          setServiceOfflineError()
+          return
+        }
+      } catch {
+        setServiceOfflineError()
+        return
+      }
+
       const stream = await getLocalStream()
 
       if (!stream || destroyed) {
@@ -310,6 +326,11 @@ export function useWebRTC(roomId, userId, displayName = userId) {
       })
 
       peer.on('error', (peerError) => {
+        if (peerError.type === 'server-error') {
+          setServiceOfflineError()
+          return
+        }
+
         setError(`PeerJS: ${peerError.type}`)
       })
     }
@@ -354,6 +375,7 @@ export function useWebRTC(roomId, userId, displayName = userId) {
     connectDataChannel,
     getLocalStream,
     publishPeerEvent,
+    setServiceOfflineError,
     displayName,
     roomId,
     userId,
