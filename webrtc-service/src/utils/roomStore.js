@@ -20,7 +20,7 @@ export function createMemoryRoomStore() {
     const socketToRoom = new Map();
 
     return {
-        async addUserToRoom(roomId, socketId, userId, peerId) {
+        async addUserToRoom(roomId, socketId, userId, peerId, displayName = userId) {
             if (!rooms.has(roomId)) rooms.set(roomId, new Map());
             const room = rooms.get(roomId);
 
@@ -31,7 +31,7 @@ export function createMemoryRoomStore() {
                 };
             }
 
-            room.set(socketId, { userId, peerId, joinedAt: Date.now() });
+            room.set(socketId, { userId, displayName, peerId, joinedAt: Date.now() });
             socketToRoom.set(socketId, roomId);
 
             const participants = await this.getUsersInRoom(roomId);
@@ -77,7 +77,7 @@ export function createRedisRoomStore(redis) {
     const socketMapKey = 'socket:map';
 
     return {
-        async addUserToRoom(roomId, socketId, userId, peerId) {
+        async addUserToRoom(roomId, socketId, userId, peerId, displayName = userId) {
             const currentSize = await redis.scard(roomSocketsKey(roomId));
 
             if (currentSize >= MAX_ROOM_SIZE) {
@@ -87,7 +87,7 @@ export function createRedisRoomStore(redis) {
                 };
             }
 
-            const userData = JSON.stringify({ userId, peerId, joinedAt: Date.now() });
+            const userData = JSON.stringify({ userId, displayName, peerId, joinedAt: Date.now() });
 
             const pipeline = redis.pipeline();
             pipeline.hset(roomUsersKey(roomId), socketId, userData);

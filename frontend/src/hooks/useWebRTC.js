@@ -17,7 +17,7 @@ function getPeerConfig() {
   }
 }
 
-export function useWebRTC(roomId, userId) {
+export function useWebRTC(roomId, userId, displayName = userId) {
   const [isConnected, setIsConnected] = useState(false)
   const [remoteUserId, setRemoteUserId] = useState(null)
   const [audioEnabled, setAudioEnabled] = useState(true)
@@ -243,7 +243,7 @@ export function useWebRTC(roomId, userId) {
         socketRef.current = socket
 
         socket.on('connect', () => {
-          socket.emit('join-room', { roomId, userId, peerId })
+          socket.emit('join-room', { roomId, userId, peerId, displayName })
         })
 
         socket.on('room-joined', ({ participants = [] }) => {
@@ -252,18 +252,18 @@ export function useWebRTC(roomId, userId) {
           const remoteParticipant = participants.find((participant) => participant.userId !== userId)
 
           if (remoteParticipant?.userId) {
-            setRemoteUserId(remoteParticipant.userId)
+            setRemoteUserId(remoteParticipant.displayName || remoteParticipant.userId)
           }
         })
 
-        socket.on('user-connected', ({ peerId: remotePeerId, userId: remoteUid, participants = [] }) => {
-          setRemoteUserId(remoteUid)
+        socket.on('user-connected', ({ peerId: remotePeerId, userId: remoteUid, displayName: remoteDisplayName, participants = [] }) => {
+          setRemoteUserId(remoteDisplayName || remoteUid)
           setParticipantCount(Math.max(participants.length, 2))
           callPeer(remotePeerId, stream)
           connectDataChannel(remotePeerId)
         })
 
-        socket.on('user-disconnected', ({ userId: remoteUid }) => {
+        socket.on('user-disconnected', ({ userId: remoteUid, displayName: remoteDisplayName }) => {
           if (currentCallRef.current) {
             currentCallRef.current.close()
           }
@@ -276,7 +276,7 @@ export function useWebRTC(roomId, userId) {
 
           publishPeerEvent({
             type: 'peer-disconnected',
-            senderId: remoteUid,
+            senderId: remoteDisplayName || remoteUid,
             timestamp: Date.now(),
           })
         })
@@ -354,6 +354,7 @@ export function useWebRTC(roomId, userId) {
     connectDataChannel,
     getLocalStream,
     publishPeerEvent,
+    displayName,
     roomId,
     userId,
   ])

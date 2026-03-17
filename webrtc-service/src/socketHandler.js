@@ -20,7 +20,7 @@ export function registerSocketHandlers(io, roomStore) {
         console.log(`[Socket] Connected: ${socket.id}`);
 
         // ─── JOIN ROOM ──────────────────────────────────────────
-        socket.on('join-room', async ({ roomId, userId, peerId }) => {
+        socket.on('join-room', async ({ roomId, userId, peerId, displayName }) => {
             try {
                 // Validate payload
                 if (!roomId || !userId || !peerId) {
@@ -42,7 +42,8 @@ export function registerSocketHandlers(io, roomStore) {
                     roomId,
                     socket.id,
                     userId,
-                    peerId
+                    peerId,
+                    displayName || userId
                 );
 
                 if (!result.success) {
@@ -57,6 +58,7 @@ export function registerSocketHandlers(io, roomStore) {
                 socket.to(roomId).emit('user-connected', {
                     peerId,
                     userId,
+                    displayName: displayName || userId,
                     participants: result.participants,
                 });
 
@@ -99,6 +101,7 @@ export function registerSocketHandlers(io, roomStore) {
                     socket.to(roomId).emit('user-disconnected', {
                         peerId: removedUser.peerId,
                         userId: removedUser.userId,
+                        displayName: removedUser.displayName || removedUser.userId,
                     });
 
                     console.log(
