@@ -18,6 +18,15 @@ function getPeerConfig() {
   }
 }
 
+function shouldInitiateConnection(localUserId, remoteUserId) {
+  if (!localUserId || !remoteUserId) {
+    return true
+  }
+
+  // Ensure only one side initiates outbound connections to reduce call glare.
+  return localUserId.localeCompare(remoteUserId) > 0
+}
+
 export function useWebRTC(roomId, userId, displayName = userId) {
   const [isConnected, setIsConnected] = useState(false)
   const [remoteUserId, setRemoteUserId] = useState(null)
@@ -294,14 +303,22 @@ export function useWebRTC(roomId, userId, displayName = userId) {
 
           if (remoteParticipant?.userId) {
             setRemoteUserId(remoteParticipant.displayName || remoteParticipant.userId)
+
+            if (remoteParticipant.peerId && shouldInitiateConnection(userId, remoteParticipant.userId)) {
+              callPeer(remoteParticipant.peerId, stream)
+              connectDataChannel(remoteParticipant.peerId)
+            }
           }
         })
 
         socket.on('user-connected', ({ peerId: remotePeerId, userId: remoteUid, displayName: remoteDisplayName, participants = [] }) => {
           setRemoteUserId(remoteDisplayName || remoteUid)
           setParticipantCount(Math.max(participants.length, 2))
-          callPeer(remotePeerId, stream)
-          connectDataChannel(remotePeerId)
+
+          if (remotePeerId && shouldInitiateConnection(userId, remoteUid)) {
+            callPeer(remotePeerId, stream)
+            connectDataChannel(remotePeerId)
+          }
         })
 
         socket.on('user-disconnected', ({ userId: remoteUid, displayName: remoteDisplayName }) => {
