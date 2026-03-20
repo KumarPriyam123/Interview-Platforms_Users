@@ -1,5 +1,5 @@
 export const dashboardNav = [
-  { label: 'Dashboard', to: '/' },
+  { label: 'Dashboard', to: '/dashboard' },
   { label: 'Profile Verification', to: '/profile-verification' },
   { label: 'Job Matches', to: '/job-matches' },
 ]
@@ -193,4 +193,3 @@ export const initialProfile = {
   portfolio: 'https://github.com/alexchen-dev',
   bio: 'Results-driven Full Stack Developer with 3+ years of experience building scalable MERN applications. Passionate about system design and cloud architecture.',
 }
-

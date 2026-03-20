@@ -13,10 +13,10 @@ import './styles/mockr.css'
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<DashboardPage />} />
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/dashboard" element={<DashboardPage />} />
       <Route path="/profile-verification" element={<ProfileVerificationPage activeTab="profile" />} />
       <Route path="/job-matches" element={<ProfileVerificationPage activeTab="matches" />} />
-      <Route path="/practice-home" element={<LandingPage />} />
       <Route path="/industry-leaders" element={<IndustryLeadersPage />} />
       <Route path="/ai-interview" element={<AIInterviewPage />} />
       <Route path="/industry-leader-interview" element={<IndustryLeaderInterviewPage />} />
