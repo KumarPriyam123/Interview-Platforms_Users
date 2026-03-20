@@ -1,1 +1,56 @@
-# Quick Start Guide## 5-Minute Setup### 1. Backend Setup (Terminal 1)```bashcd backendpython -m venv venvsource venv/bin/activate  # Windows: venv\Scripts\activatepip install -r requirements.txt```Create `.env` file:```LLM_API_KEY=your_openai_api_keyLLM_PROVIDER=openaiLLM_MODEL=gpt-3.5-turboDATABASE_URL=sqlite+aiosqlite:///./interview.db```Run backend:```bashpython run.py```Backend starts at: `http://localhost:8000`### 2. Frontend Setup (Terminal 2)```bashcd frontendnpm installnpm run dev```Frontend starts at: `http://localhost:5173`### 3. Test the Application1. Open `http://localhost:5173` in browser2. Upload a sample resume (PDF/DOCX)3. Enter:   - Email: test@example.com   - Company: Test Company   - Role: Senior Developer4. Click "Start Interview"5. Answer 10 interview questions6. View your report## API Testing with cURL```bash# Start Interviewcurl -X POST http://localhost:8000/interviews/start \  -F "file=@resume.pdf" \  -F "email=test@example.com" \  -F "company=Google" \  -F "role=Software Engineer"# Get Questioncurl http://localhost:8000/interviews/{session_id}/question# Submit Answercurl -X POST http://localhost:8000/interviews/{session_id}/answer \  -H "Content-Type: application/json" \  -d '{"answer":"Your answer here"}'# Get Reportcurl http://localhost:8000/interviews/{session_id}/report```## Environment Variables### Backend (.env)```LLM_API_KEY=your_api_key_hereLLM_PROVIDER=openai|claude|geminiLLM_MODEL=gpt-3.5-turbo|claude-2|gemini-proDATABASE_URL=sqlite+aiosqlite:///./interview.dbHOST=0.0.0.0PORT=8000```### Frontend (vite.config.js)API proxy already configured for `http://localhost:8000`## Troubleshooting| Issue | Solution ||-------|----------|| Port 8000 already in use | `lsof -i :8000` and kill process or change port || CORS error | Ensure frontend URL in backend CORS config || Resume extraction fails | Check file format (PDF/DOCX) || No LLM response | Verify API key and provider configuration |## Next Steps1. Configure your preferred LLM provider (OpenAI, Claude, or Gemini)2. Customize interview questions and evaluation criteria3. Add authentication and user profiles4. Deploy to production (AWS, Heroku, etc.)## Resources- [OpenAI API Docs](https://platform.openai.com/docs)- [Claude API Docs](https://docs.anthropic.com)- [Google Gemini Docs](https://ai.google.dev)- [FastAPI Docs](https://fastapi.tiangolo.com)- [React Docs](https://react.dev)
+# Quick Start (MERN + LLM)
+
+## 1. Install Dependencies
+
+```bash
+npm install
+```
+
+## 2. Configure Environment
+
+Copy `.env.example` to `.env` and fill the values:
+
+```env
+MONGODB_URI=mongodb://127.0.0.1:27017/ai_interview_service
+PORT=8000
+FRONTEND_URL=http://localhost:5173
+LLM_PROVIDER=gemini
+LLM_MODEL=gemini-1.5-flash
+GEMINI_API_KEY=your_gemini_key_here
+OPENAI_API_KEY=
+LLM_API_KEY=
+```
+
+Notes:
+- Set `LLM_PROVIDER=openai` to use OpenAI.
+- If provider-specific key is not present, service uses `LLM_API_KEY` fallback.
+
+## 3. Start Service
+
+```bash
+npm run dev
+```
+
+Server starts on `http://localhost:8000`.
+
+## 4. Test APIs
+
+```bash
+# Start interview (multipart form)
+curl -X POST http://localhost:8000/interviews/start \
+  -F "file=@resume.txt" \
+  -F "email=test@example.com" \
+  -F "company=ExampleCorp" \
+  -F "role=Software Engineer"
+
+# Get question
+curl http://localhost:8000/interviews/{sessionId}/question
+
+# Submit answer
+curl -X POST http://localhost:8000/interviews/{sessionId}/answer \
+  -H "Content-Type: application/json" \
+  -d '{"answer":"My answer"}'
+
+# Get report
+curl http://localhost:8000/interviews/{sessionId}/report
+```
