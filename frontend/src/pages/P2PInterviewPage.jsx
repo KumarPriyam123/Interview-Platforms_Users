@@ -2,8 +2,8 @@ import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } fro
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useWebRTC } from '../hooks/useWebRTC'
 import { mockInterviewPrompt, mockStarterCode } from '../services/mockInterviewData'
+import { SIGNALING_URL } from '../utils/realtimeConfig'
 
-const SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL || 'http://localhost:9000'
 const ROOM_POLL_INTERVAL = 5000
 const MIN_CENTER_WIDTH = 28
 

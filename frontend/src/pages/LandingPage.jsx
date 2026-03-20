@@ -13,7 +13,7 @@ export default function LandingPage() {
 
           <nav className="nav-links">
             <button type="button" className="btn btn-ghost">Documentation</button>
-            <button type="button" className="btn btn-ghost">Sign In</button>
+            <Link to="/dashboard" className="btn btn-ghost">Sign In</Link>
           </nav>
         </header>
 
@@ -30,7 +30,7 @@ export default function LandingPage() {
           </p>
 
           <div className="hero-actions">
-            <Link to="/industry-leaders" className="btn btn-primary">Get Started</Link>
+            <Link to="/dashboard" className="btn btn-primary">Get Started</Link>
             <Link to="/p2p-interview" className="btn btn-ghost">Practice With Peer</Link>
             <Link to="/ai-interview" className="btn btn-ghost">Watch Demo</Link>
           </div>

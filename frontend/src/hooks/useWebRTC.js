@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { io } from 'socket.io-client'
 import Peer from 'peerjs'
+import { PEERJS_URL, SIGNALING_URL } from '../utils/realtimeConfig'
 
-const SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL || 'http://localhost:9000'
-const PEERJS_URL = import.meta.env.VITE_PEERJS_URL || 'http://localhost:9001'
 const DEFAULT_REMOTE_MEDIA_STATE = { audio: true, video: true }
 const SERVICE_RETRY_DELAY = 3000
 
