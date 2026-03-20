@@ -62,3 +62,7 @@ tmp/
 # Uploads
 data/storage/uploads/*
 !data/storage/uploads/.gitkeep
+
+
+*.bat
+*sample_frontend.html
