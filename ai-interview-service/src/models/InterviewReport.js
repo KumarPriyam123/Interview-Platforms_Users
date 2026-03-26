@@ -14,6 +14,20 @@ const InterviewReportSchema = new mongoose.Schema(
     strengths: { type: [String], default: [] },
     weaknesses: { type: [String], default: [] },
     recommendations: { type: [String], default: [] },
+    sectionScores: [
+      {
+        sectionTitle: { type: String },
+        score: { type: Number },
+        feedback: { type: String },
+      },
+    ],
+    skillAssessment: [
+      {
+        skill: { type: String },
+        level: { type: String, enum: ["beginner", "intermediate", "advanced", "expert"] },
+        score: { type: Number },
+      },
+    ],
   },
   { timestamps: true }
 );

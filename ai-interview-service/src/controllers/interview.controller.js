@@ -1,31 +1,33 @@
 import {
-  createInterviewPlan,
   evaluateAnswer,
+  evaluateCounterAnswer,
   extractSkillsFromResume,
-  generateQuestion,
+  generateAllQuestions,
   generateReport,
+  resolveDoubt,
 } from "../services/llm.service.js";
 import {
-  addQuestion,
+  addAllQuestions,
+  addCounterQuestion,
+  addToConversationHistory,
   createReport,
   createSession,
   endInterview,
-  getCurrentQuestionIndex,
+  getConversationHistory,
+  getQuestionByNumber,
   getQuestions,
   getReportBySessionId,
   getSessionById,
   submitAnswer,
+  submitCounterAnswer,
   updateQuestionIndex,
+  updateSessionSections,
 } from "../services/interview.service.js";
+import { storeInterviewData } from "../services/rag.service.js";
 import { extractTextFromBuffer } from "../utils/resumeExtractor.js";
 
-const INTERVIEW_QUESTIONS_COUNT = 10;
-
-const averageScore = (questions) => {
-  const scored = questions.filter((item) => typeof item.score === "number");
-  if (!scored.length) return null;
-  return scored.reduce((sum, item) => sum + item.score, 0) / scored.length;
-};
+// ─── Start Interview ────────────────────────────────────────
+// Uploads resume, generates ALL questions in sections, returns session
 
 export const startInterview = async (req, res, next) => {
   try {
@@ -33,20 +35,36 @@ export const startInterview = async (req, res, next) => {
     const file = req.file;
 
     if (!file || !role || !company || !email) {
-      return res.status(400).json({ detail: "Missing required fields" });
+      return res.status(400).json({ detail: "Missing required fields (file, role, company, email)" });
     }
 
-    const resumeText = await extractTextFromBuffer(file.buffer);
+    // Parse resume
+    const resumeText = await extractTextFromBuffer(file.buffer, file.mimetype);
     const resumeData = await extractSkillsFromResume(resumeText);
 
+    // Create session
     const session = await createSession({ email, company, role, resumeText, resumeData });
 
-    const plan = await createInterviewPlan(resumeData, role, company);
-    session.interviewPlan = plan;
-    await session.save();
+    // Generate ALL questions at once in sections
+    const sections = await generateAllQuestions({ resumeData, role, company });
 
-    const firstQuestion = await generateQuestion({ role, company, questionIndex: 0 });
-    await addQuestion({ sessionId: session._id, questionNumber: 0, questionText: firstQuestion });
+    // Count total questions
+    const totalQuestions = sections.reduce((sum, s) => sum + (s.questions || []).length, 0);
+
+    // Save sections to session
+    await updateSessionSections(session._id, sections, totalQuestions);
+
+    // Save all questions to DB
+    await addAllQuestions(session._id, sections);
+
+    // Add first question to conversation history
+    if (sections.length > 0 && sections[0].questions?.length > 0) {
+      await addToConversationHistory(session._id, {
+        role: "assistant",
+        content: sections[0].questions[0].question,
+        type: "question",
+      });
+    }
 
     return res.status(201).json({
       session_id: session._id,
@@ -54,11 +72,68 @@ export const startInterview = async (req, res, next) => {
       company: session.company,
       role: session.role,
       created_at: session.createdAt,
+      total_questions: totalQuestions,
+      sections: sections.map((s) => ({
+        title: s.title,
+        description: s.description,
+        question_count: (s.questions || []).length,
+      })),
     });
   } catch (error) {
     return next(error);
   }
 };
+
+// ─── Get All Questions ──────────────────────────────────────
+// Returns all questions organized by sections (for sidebar)
+
+export const getAllQuestions = async (req, res, next) => {
+  try {
+    const { sessionId } = req.params;
+    const session = await getSessionById(sessionId);
+
+    if (!session) {
+      return res.status(404).json({ detail: "Session not found" });
+    }
+
+    const questions = await getQuestions(sessionId);
+
+    // Group questions by section
+    const sectionMap = {};
+    for (const q of questions) {
+      const key = q.sectionIndex;
+      if (!sectionMap[key]) {
+        sectionMap[key] = {
+          sectionIndex: q.sectionIndex,
+          title: q.sectionTitle,
+          questions: [],
+        };
+      }
+      sectionMap[key].questions.push({
+        questionNumber: q.questionNumber,
+        question: q.questionText,
+        difficulty: q.difficulty,
+        answered: Boolean(q.userAnswer),
+        score: q.score,
+      });
+    }
+
+    const sections = Object.values(sectionMap).sort((a, b) => a.sectionIndex - b.sectionIndex);
+
+    return res.json({
+      session_id: sessionId,
+      status: session.status,
+      current_question_index: session.currentQuestionIndex,
+      current_section_index: session.currentSectionIndex,
+      total_questions: session.totalQuestions,
+      sections,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+// ─── Get Current Question ───────────────────────────────────
 
 export const getQuestion = async (req, res, next) => {
   try {
@@ -73,77 +148,282 @@ export const getQuestion = async (req, res, next) => {
       return res.json({ status: "completed" });
     }
 
-    const currentIndex = await getCurrentQuestionIndex(sessionId);
-    if (currentIndex >= INTERVIEW_QUESTIONS_COUNT) {
-      await endInterview(sessionId);
+    const currentIndex = session.currentQuestionIndex;
+    const question = await getQuestionByNumber(sessionId, currentIndex);
+
+    if (!question) {
       return res.json({ status: "completed" });
     }
 
-    const questions = await getQuestions(sessionId);
-    let questionText;
-
-    if (questions.length <= currentIndex) {
-      const nextQuestion = await generateQuestion({
-        role: session.role,
-        company: session.company,
-        questionIndex: currentIndex,
-        previousPerformance: averageScore(questions),
-      });
-      await addQuestion({
-        sessionId: session._id,
-        questionNumber: currentIndex,
-        questionText: nextQuestion,
-      });
-      questionText = nextQuestion;
-    } else {
-      questionText = questions[currentIndex].questionText;
-    }
-
-    return res.json({ question: questionText, status: "active" });
+    return res.json({
+      question: question.questionText,
+      question_number: question.questionNumber,
+      section_index: question.sectionIndex,
+      section_title: question.sectionTitle,
+      difficulty: question.difficulty,
+      total_questions: session.totalQuestions,
+      current_index: currentIndex,
+      status: "active",
+    });
   } catch (error) {
     return next(error);
   }
 };
+
+// ─── Answer Question ────────────────────────────────────────
+// Evaluates answer and may return a counter-question
 
 export const answerQuestion = async (req, res, next) => {
   try {
     const { sessionId } = req.params;
     const { answer } = req.body;
 
+    if (!answer || !answer.trim()) {
+      return res.status(400).json({ detail: "Answer is required" });
+    }
+
     const session = await getSessionById(sessionId);
     if (!session) {
       return res.status(404).json({ detail: "Session not found" });
     }
 
-    const currentIndex = await getCurrentQuestionIndex(sessionId);
-    const questions = await getQuestions(sessionId);
+    const currentIndex = session.currentQuestionIndex;
+    const question = await getQuestionByNumber(sessionId, currentIndex);
 
-    if (currentIndex >= questions.length) {
+    if (!question) {
       return res.status(400).json({ detail: "No active question" });
     }
 
-    const currentQuestion = questions[currentIndex];
-    const evaluation = await evaluateAnswer({
-      question: currentQuestion.questionText,
-      answer,
-      role: session.role,
+    // Get conversation history for context
+    const conversationHistory = await getConversationHistory(sessionId);
+
+    // Add user answer to conversation history
+    await addToConversationHistory(sessionId, {
+      role: "user",
+      content: answer,
+      type: "answer",
     });
 
+    // Evaluate the answer
+    const evaluation = await evaluateAnswer({
+      question: question.questionText,
+      answer,
+      role: session.role,
+      company: session.company,
+      conversationHistory,
+    });
+
+    // Save answer and evaluation
     await submitAnswer({
       sessionId,
       questionNumber: currentIndex,
       answer,
       feedback: evaluation.feedback,
       score: evaluation.score,
+      strengths: evaluation.strengths,
+      improvements: evaluation.improvements,
+      modelAnswer: evaluation.model_answer,
     });
 
-    await updateQuestionIndex(sessionId, currentIndex + 1);
+    // Add feedback to conversation history
+    await addToConversationHistory(sessionId, {
+      role: "assistant",
+      content: evaluation.feedback,
+      type: "feedback",
+    });
 
-    return res.json(evaluation);
+    // If counter-question is needed, add it
+    if (evaluation.should_counter_question && evaluation.counter_question) {
+      await addCounterQuestion(sessionId, currentIndex, evaluation.counter_question);
+      await addToConversationHistory(sessionId, {
+        role: "assistant",
+        content: evaluation.counter_question,
+        type: "counter_question",
+      });
+    }
+
+    return res.json({
+      ...evaluation,
+      question_number: currentIndex,
+      has_counter_question: evaluation.should_counter_question && Boolean(evaluation.counter_question),
+    });
   } catch (error) {
     return next(error);
   }
 };
+
+// ─── Answer Counter Question ────────────────────────────────
+
+export const answerCounterQuestion = async (req, res, next) => {
+  try {
+    const { sessionId } = req.params;
+    const { answer, question_number } = req.body;
+
+    if (!answer || !answer.trim()) {
+      return res.status(400).json({ detail: "Answer is required" });
+    }
+
+    const session = await getSessionById(sessionId);
+    if (!session) {
+      return res.status(404).json({ detail: "Session not found" });
+    }
+
+    const qNum = question_number ?? session.currentQuestionIndex;
+    const question = await getQuestionByNumber(sessionId, qNum);
+    if (!question) {
+      return res.status(404).json({ detail: "Question not found" });
+    }
+
+    const lastCounter = question.counterQuestions[question.counterQuestions.length - 1];
+    if (!lastCounter) {
+      return res.status(400).json({ detail: "No counter question to answer" });
+    }
+
+    // Add to conversation history
+    await addToConversationHistory(sessionId, {
+      role: "user",
+      content: answer,
+      type: "answer",
+    });
+
+    // Evaluate counter answer
+    const evaluation = await evaluateCounterAnswer({
+      originalQuestion: question.questionText,
+      originalAnswer: question.userAnswer,
+      counterQuestion: lastCounter.question,
+      counterAnswer: answer,
+      role: session.role,
+      company: session.company,
+    });
+
+    // Save counter answer
+    const counterIndex = question.counterQuestions.length - 1;
+    await submitCounterAnswer(sessionId, qNum, counterIndex, answer, evaluation.feedback);
+
+    // Adjust score if needed
+    if (evaluation.score_adjustment !== 0) {
+      const newScore = Math.max(1, Math.min(10, (question.score || 6) + evaluation.score_adjustment));
+      await submitAnswer({
+        sessionId,
+        questionNumber: qNum,
+        answer: question.userAnswer,
+        feedback: question.feedback,
+        score: newScore,
+        strengths: question.strengths,
+        improvements: question.improvements,
+        modelAnswer: question.modelAnswer,
+      });
+    }
+
+    await addToConversationHistory(sessionId, {
+      role: "assistant",
+      content: evaluation.feedback,
+      type: "feedback",
+    });
+
+    return res.json({
+      feedback: evaluation.feedback,
+      score_adjustment: evaluation.score_adjustment,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+// ─── Move to Next Question ──────────────────────────────────
+
+export const nextQuestion = async (req, res, next) => {
+  try {
+    const { sessionId } = req.params;
+    const session = await getSessionById(sessionId);
+
+    if (!session) {
+      return res.status(404).json({ detail: "Session not found" });
+    }
+
+    const nextIndex = session.currentQuestionIndex + 1;
+    const questions = await getQuestions(sessionId);
+
+    if (nextIndex >= questions.length) {
+      await endInterview(sessionId);
+      return res.json({ status: "completed" });
+    }
+
+    await updateQuestionIndex(sessionId, nextIndex);
+
+    const nextQ = questions[nextIndex];
+
+    // Add next question to conversation history
+    await addToConversationHistory(sessionId, {
+      role: "assistant",
+      content: nextQ.questionText,
+      type: "question",
+    });
+
+    return res.json({
+      question: nextQ.questionText,
+      question_number: nextQ.questionNumber,
+      section_index: nextQ.sectionIndex,
+      section_title: nextQ.sectionTitle,
+      difficulty: nextQ.difficulty,
+      total_questions: session.totalQuestions,
+      current_index: nextIndex,
+      status: "active",
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+// ─── Doubt Resolution ───────────────────────────────────────
+
+export const askDoubt = async (req, res, next) => {
+  try {
+    const { sessionId } = req.params;
+    const { doubt } = req.body;
+
+    if (!doubt || !doubt.trim()) {
+      return res.status(400).json({ detail: "Doubt text is required" });
+    }
+
+    const session = await getSessionById(sessionId);
+    if (!session) {
+      return res.status(404).json({ detail: "Session not found" });
+    }
+
+    const currentQuestion = await getQuestionByNumber(sessionId, session.currentQuestionIndex);
+    const conversationHistory = await getConversationHistory(sessionId);
+
+    // Add doubt to history
+    await addToConversationHistory(sessionId, {
+      role: "user",
+      content: doubt,
+      type: "doubt",
+    });
+
+    // Resolve doubt
+    const response = await resolveDoubt({
+      doubt,
+      currentQuestion: currentQuestion?.questionText || "",
+      role: session.role,
+      company: session.company,
+      conversationHistory,
+    });
+
+    // Add response to history
+    await addToConversationHistory(sessionId, {
+      role: "assistant",
+      content: response.response,
+      type: "doubt_response",
+    });
+
+    return res.json(response);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+// ─── Get Interview Report ───────────────────────────────────
 
 export const getInterviewReport = async (req, res, next) => {
   try {
@@ -163,26 +443,49 @@ export const getInterviewReport = async (req, res, next) => {
         strengths: existingReport.strengths,
         weaknesses: existingReport.weaknesses,
         recommendations: existingReport.recommendations,
+        section_scores: existingReport.sectionScores,
+        skill_assessment: existingReport.skillAssessment,
         questions: questions.map((q) => ({
           question: q.questionText,
           answer: q.userAnswer,
           score: q.score,
           feedback: q.feedback,
+          strengths: q.strengths,
+          improvements: q.improvements,
+          model_answer: q.modelAnswer,
+          section_title: q.sectionTitle,
+          difficulty: q.difficulty,
+          counter_questions: q.counterQuestions.map((cq) => ({
+            question: cq.question,
+            answer: cq.userAnswer,
+            feedback: cq.feedback,
+          })),
         })),
       });
     }
 
     const evaluations = questions
       .filter((q) => typeof q.score === "number")
-      .map((q) => ({ feedback: q.feedback, score: q.score }));
+      .map((q) => ({
+        question: q.questionText,
+        answer: q.userAnswer,
+        feedback: q.feedback,
+        score: q.score,
+        section: q.sectionTitle,
+      }));
 
     if (!evaluations.length) {
       return res.status(400).json({ detail: "No evaluated questions yet" });
     }
 
     const reportData = await generateReport(
-      { role: session.role, company: session.company },
-      evaluations
+      {
+        role: session.role,
+        company: session.company,
+        resumeSkills: session.resumeSkills,
+      },
+      evaluations,
+      session.sections
     );
 
     await createReport({
@@ -192,7 +495,28 @@ export const getInterviewReport = async (req, res, next) => {
       strengths: reportData.strengths,
       weaknesses: reportData.weaknesses,
       recommendations: reportData.recommendations,
+      sectionScores: reportData.section_scores,
+      skillAssessment: reportData.skill_assessment,
     });
+
+    // Store interview data in RAG for future retrieval
+    try {
+      await storeInterviewData({
+        sessionId,
+        role: session.role,
+        company: session.company,
+        questions: questions.map((q) => ({
+          questionText: q.questionText,
+          userAnswer: q.userAnswer,
+          score: q.score,
+          feedback: q.feedback,
+          sectionTitle: q.sectionTitle,
+          questionNumber: q.questionNumber,
+        })),
+      });
+    } catch (_error) {
+      // RAG storage is optional
+    }
 
     return res.json({
       ...reportData,
@@ -201,12 +525,24 @@ export const getInterviewReport = async (req, res, next) => {
         answer: q.userAnswer,
         score: q.score,
         feedback: q.feedback,
+        strengths: q.strengths,
+        improvements: q.improvements,
+        model_answer: q.modelAnswer,
+        section_title: q.sectionTitle,
+        difficulty: q.difficulty,
+        counter_questions: q.counterQuestions.map((cq) => ({
+          question: cq.question,
+          answer: cq.userAnswer,
+          feedback: cq.feedback,
+        })),
       })),
     });
   } catch (error) {
     return next(error);
   }
 };
+
+// ─── Stop Interview ─────────────────────────────────────────
 
 export const stopInterview = async (req, res, next) => {
   try {

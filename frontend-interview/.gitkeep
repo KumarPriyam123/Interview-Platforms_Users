@@ -1,1 +1,0 @@
-import React from 'react'import './App.css'function App() {  return (    <div className="app-container">      <div className="coming-soon">        <h1>Loading Application...</h1>        <p>If you're seeing this, the React app needs to be built.</p>        <p>Run: <code>npm run build</code></p>      </div>    </div>  )}export default App
