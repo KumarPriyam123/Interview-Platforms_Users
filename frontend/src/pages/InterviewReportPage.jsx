@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
-import { getInterviewReport } from '../services/api'
-import '../styles/ReportPage.css'
+import { useParams, useNavigate } from 'react-router-dom'
+import { getInterviewReport } from '../services/interviewApi'
+import '../styles/InterviewReportPage.css'
 
-function ReportPage() {
+function InterviewReportPage() {
   const { id: sessionId } = useParams()
+  const navigate = useNavigate()
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -41,7 +42,7 @@ function ReportPage() {
     <div className="report-container">
       <div className="report-header">
         <h1>Interview Report</h1>
-        <button onClick={() => window.location.href = '/setup'} className="restart-btn">
+        <button onClick={() => navigate('/interview-setup')} className="restart-btn">
           Start New Interview
         </button>
       </div>
@@ -101,4 +102,4 @@ function ReportPage() {
   )
 }
 
-export default ReportPage
+export default InterviewReportPage

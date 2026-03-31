@@ -1,0 +1,40 @@
+import axios from 'axios'
+
+const API_BASE_URL = 'http://localhost:8003'
+
+export const apiClient = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+export const uploadResume = (file, role, company, email) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('role', role)
+  formData.append('company', company)
+  formData.append('email', email)
+
+  return apiClient.post('/interviews/start', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  })
+}
+
+export const getInterviewQuestion = (sessionId) => {
+  return apiClient.get(`/interviews/${sessionId}/question`)
+}
+
+export const submitAnswer = (sessionId, answer) => {
+  return apiClient.post(`/interviews/${sessionId}/answer`, { answer })
+}
+
+export const getInterviewReport = (sessionId) => {
+  return apiClient.get(`/interviews/${sessionId}/report`)
+}
+
+export const endInterview = (sessionId) => {
+  return apiClient.post(`/interviews/${sessionId}/end`, {})
+}

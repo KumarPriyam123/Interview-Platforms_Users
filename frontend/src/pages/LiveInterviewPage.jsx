@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
-import { getInterviewQuestion, submitAnswer, endInterview } from '../services/api'
-import '../styles/InterviewPage.css'
+import { useParams, useNavigate } from 'react-router-dom'
+import { getInterviewQuestion, submitAnswer, endInterview } from '../services/interviewApi'
+import '../styles/LiveInterviewPage.css'
 
-function InterviewPage() {
+function LiveInterviewPage() {
   const { id: sessionId } = useParams()
+  const navigate = useNavigate()
   const [question, setQuestion] = useState(null)
   const [answer, setAnswer] = useState('')
   const [loading, setLoading] = useState(true)
@@ -28,7 +29,7 @@ function InterviewPage() {
 
       if (response.data.status === 'completed') {
         setCompleted(true)
-        window.location.href = `/report/${sessionId}`
+        navigate(`/interview-report/${sessionId}`)
       } else {
         setQuestion(response.data.question)
         setFeedback('')
@@ -70,7 +71,7 @@ function InterviewPage() {
     if (window.confirm('Are you sure you want to end the interview?')) {
       try {
         await endInterview(sessionId)
-        window.location.href = `/report/${sessionId}`
+        navigate(`/interview-report/${sessionId}`)
       } catch (err) {
         setError('Failed to end interview')
       }
@@ -166,4 +167,4 @@ function InterviewPage() {
   )
 }
 
-export default InterviewPage
+export default LiveInterviewPage

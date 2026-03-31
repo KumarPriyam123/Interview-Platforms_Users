@@ -7,9 +7,11 @@ import FeedbackPage from './pages/FeedbackPage'
 import P2PInterviewPage from './pages/P2PInterviewPage'
 import DashboardPage from './pages/DashboardPage'
 import ProfileVerificationPage from './pages/ProfileVerificationPage'
+import InterviewSetupPage from './pages/InterviewSetupPage'
+import LiveInterviewPage from './pages/LiveInterviewPage'
+import InterviewReportPage from './pages/InterviewReportPage'
 import './App.css'
 import './styles/mockr.css'
-
 function App() {
   return (
     <Routes>
@@ -19,6 +21,9 @@ function App() {
       <Route path="/job-matches" element={<ProfileVerificationPage activeTab="matches" />} />
       <Route path="/industry-leaders" element={<IndustryLeadersPage />} />
       <Route path="/ai-interview" element={<AIInterviewPage />} />
+      <Route path="/interview-setup" element={<InterviewSetupPage />} />
+      <Route path="/live-interview/:id" element={<LiveInterviewPage />} />
+      <Route path="/interview-report/:id" element={<InterviewReportPage />} />
       <Route path="/industry-leader-interview" element={<IndustryLeaderInterviewPage />} />
       <Route path="/p2p-interview" element={<P2PInterviewPage />} />
       <Route path="/feedback" element={<FeedbackPage />} />
@@ -26,5 +31,4 @@ function App() {
     </Routes>
   )
 }
-
 export default App

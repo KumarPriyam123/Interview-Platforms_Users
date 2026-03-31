@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { uploadResume } from '../services/api'
-import '../styles/SetupPage.css'
+import { useNavigate } from 'react-router-dom'
+import { uploadResume } from '../services/interviewApi'
+import '../styles/InterviewSetupPage.css'
 
-function SetupPage({ onSessionCreated }) {
+function InterviewSetupPage() {
+  const navigate = useNavigate()
   const [resume, setResume] = useState(null)
   const [role, setRole] = useState('')
   const [company, setCompany] = useState('')
@@ -41,8 +43,7 @@ function SetupPage({ onSessionCreated }) {
     try {
       const response = await uploadResume(resume, trimmedRole, trimmedCompany, trimmedEmail)
       const { session_id } = response.data
-      onSessionCreated(session_id)
-      window.location.href = `/interview/${session_id}`
+      navigate(`/live-interview/${session_id}`)
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to start interview')
     } finally {
@@ -120,4 +121,4 @@ function SetupPage({ onSessionCreated }) {
   )
 }
 
-export default SetupPage
+export default InterviewSetupPage
