@@ -126,6 +126,31 @@ const iceServers = [
 ]
 ```
 
+### 2d. Start The Code Execution Stack
+
+If you only need the backend execution API used by the collaborative editor, run:
+
+```powershell
+npm run start:code-execution
+```
+
+For auto-reload during development:
+
+```powershell
+npm run start:code-execution:dev
+```
+
+This starts:
+- Redis in Docker on `localhost:6379`
+- The Node backend on `http://localhost:8000`
+- The BullMQ worker in a separate PowerShell window
+
+If Redis is already running elsewhere, you can call the script directly with:
+
+```powershell
+.\scripts\start_code_execution_stack.ps1 -SkipRedis
+```
+
 **Skip flags** (optional):
 ```powershell
 .\scripts\start_services.ps1 -SkipFrontend    # Run backends only
