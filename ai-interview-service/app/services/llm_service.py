@@ -1,1 +1,196 @@
-import osfrom typing import Dict, Listimport jsonimport reclass LLMService:    """Service to interact with LLM APIs (OpenAI, Claude, Gemini)"""        def __init__(self):        self.api_key = os.getenv("LLM_API_KEY")        self.api_provider = os.getenv("LLM_PROVIDER", "openai")        self.model = os.getenv("LLM_MODEL", "gpt-3.5-turbo")        print(f"[LLMService] Provider: {self.api_provider}, Model: {self.model}, Key: {self.api_key[:10]}...")        async def extract_skills_from_resume(self, resume_text: str) -> Dict:        """Extract skills and experience from resume text using LLM"""        prompt = f"""Analyze the following resume and extract:1. Key technical skills (list)2. Experience summary (brief)3. Years of experience4. Key achievements (list)Resume:{resume_text}Return ONLY valid JSON with keys: technical_skills, experience_summary, years_of_experience, achievementsDo not include any markdown formatting or code blocks."""        response = await self._call_llm(prompt)        return self._parse_json(response)        async def create_interview_plan(self, resume_data: Dict, role: str, company: str) -> Dict:        """Create an interview plan based on resume and role"""        prompt = f"""Create an interview plan for a {role} position at {company}.Resume Data:- Skills: {resume_data.get('technical_skills', [])}- Experience: {resume_data.get('experience_summary', '')}- Years: {resume_data.get('years_of_experience', 0)}Create 10 interview questions that:1. Assess technical knowledge2. Evaluate problem-solving3. Test cultural fit4. Challenge their experienceReturn ONLY valid JSON with key: questions (list of strings)Do not include any markdown formatting or code blocks."""        response = await self._call_llm(prompt)        return self._parse_json(response)        async def generate_question(self, session_data: Dict, question_index: int, previous_performance: float = None) -> str:        """Generate adaptive interview question"""        difficulty = self._calculate_difficulty(previous_performance)                prompt = f"""Generate an interview question for {session_data['role']} position.        Context:- Role: {session_data['role']}- Company: {session_data['company']}- Difficulty level: {difficulty}- Question number: {question_index + 1}The question should be specific and challenging.Return only the question text, no additional content."""        question = await self._call_llm(prompt)        return question.strip()        async def evaluate_answer(self, question: str, answer: str, role: str, skill_level: str = "intermediate") -> Dict:        """Evaluate candidate's answer"""        prompt = f"""Evaluate this interview answer for a {role} position.Question: {question}Candidate's Answer: {answer}Provide:1. Score (0-100)2. Feedback (constructive, 2-3 sentences)3. Areas of strength (list of strings)4. Areas to improve (list of strings, with specific actionable tips)5. Model answer (the ideal/best answer to this question, 3-5 sentences)Return ONLY valid JSON with keys: score, feedback, strengths, improvements, model_answerDo not include any markdown formatting or code blocks."""        response = await self._call_llm(prompt)        return self._parse_json(response)        async def generate_report(self, session_data: Dict, all_evaluations: List[Dict]) -> Dict:        """Generate comprehensive interview report"""        evaluations_text = "\n".join([            f"Q{i+1}: {e['feedback']}" for i, e in enumerate(all_evaluations)        ])                prompt = f"""Generate an interview report for {session_data['role']} position at {session_data['company']}.Performance Data:{evaluations_text}Provide:1. Overall score (0-100)2. Summary (2-3 sentences)3. Top 3 strengths4. Top 3 weaknesses5. Top 3 recommendationsReturn ONLY valid JSON with keys: overall_score, summary, strengths, weaknesses, recommendationsDo not include any markdown formatting or code blocks."""        response = await self._call_llm(prompt)        return self._parse_json(response)        def _parse_json(self, response: str) -> Dict:        """Parse JSON from LLM response, handling markdown code blocks"""        # Remove markdown code blocks if present        cleaned = response.strip()        cleaned = re.sub(r'^```(?:json)?\s*\n?', '', cleaned)        cleaned = re.sub(r'\n?```\s*$', '', cleaned)        cleaned = cleaned.strip()        return json.loads(cleaned)        async def _call_llm(self, prompt: str) -> str:        """Make API call to LLM provider"""        if self.api_provider == "openai":            return await self._call_openai(prompt)        elif self.api_provider == "claude":            return await self._call_claude(prompt)        elif self.api_provider == "gemini":            return await self._call_gemini(prompt)        else:            raise ValueError(f"Unsupported LLM provider: {self.api_provider}")        async def _call_openai(self, prompt: str) -> str:        """Call OpenAI API"""        try:            from openai import OpenAI            client = OpenAI(api_key=self.api_key)                        response = client.chat.completions.create(                model=self.model,                messages=[                    {"role": "system", "content": "You are an expert interview conductor. Always respond with valid JSON when asked."},                    {"role": "user", "content": prompt}                ],                temperature=0.7,                max_tokens=1000            )            return response.choices[0].message.content        except Exception as e:            raise Exception(f"OpenAI API error: {str(e)}")        async def _call_claude(self, prompt: str) -> str:        """Call Claude API"""        try:            import anthropic            client = anthropic.Anthropic(api_key=self.api_key)                        response = client.messages.create(                model=self.model,                max_tokens=1000,                messages=[                    {"role": "user", "content": prompt}                ]            )            return response.content[0].text        except Exception as e:            raise Exception(f"Claude API error: {str(e)}")        async def _call_gemini(self, prompt: str) -> str:        """Call Google Gemini API"""        try:            import google.generativeai as genai            genai.configure(api_key=self.api_key)                        model = genai.GenerativeModel(self.model)            response = model.generate_content(prompt)            return response.text        except Exception as e:            raise Exception(f"Gemini API error: {str(e)}")        @staticmethod    def _calculate_difficulty(previous_performance: float) -> str:        """Calculate question difficulty based on previous performance"""        if previous_performance is None:            return "medium"        elif previous_performance >= 80:            return "hard"        elif previous_performance >= 60:            return "medium"        else:            return "easy"
+import os
+from typing import Dict, List
+import json
+import re
+
+
+class LLMService:
+    """Service to interact with LLM APIs (OpenAI, Claude, Gemini)"""
+
+    def __init__(self):
+        self.api_key = os.getenv("LLM_API_KEY")
+        self.api_provider = os.getenv("LLM_PROVIDER", "openai")
+        self.model = os.getenv("LLM_MODEL", "gpt-3.5-turbo")
+        print(f"[LLMService] Provider: {self.api_provider}, Model: {self.model}, Key: {self.api_key[:10]}...")
+
+    async def extract_skills_from_resume(self, resume_text: str) -> Dict:
+        """Extract skills and experience from resume text using LLM"""
+        prompt = f"""Analyze the following resume and extract:
+1. Key technical skills (list)
+2. Experience summary (brief)
+3. Years of experience
+4. Key achievements (list)
+
+Resume:
+{resume_text}
+
+Return ONLY valid JSON with keys: technical_skills, experience_summary, years_of_experience, achievements
+Do not include any markdown formatting or code blocks."""
+
+        response = await self._call_llm(prompt)
+        return self._parse_json(response)
+
+    async def create_interview_plan(self, resume_data: Dict, role: str, company: str) -> Dict:
+        """Create an interview plan based on resume and role"""
+        prompt = f"""Create an interview plan for a {role} position at {company}.
+
+Resume Data:
+- Skills: {resume_data.get('technical_skills', [])}
+- Experience: {resume_data.get('experience_summary', '')}
+- Years: {resume_data.get('years_of_experience', 0)}
+
+Create 10 interview questions that:
+1. Assess technical knowledge
+2. Evaluate problem-solving
+3. Test cultural fit
+4. Challenge their experience
+
+Return ONLY valid JSON with key: questions (list of strings)
+Do not include any markdown formatting or code blocks."""
+
+        response = await self._call_llm(prompt)
+        return self._parse_json(response)
+
+    async def generate_question(self, session_data: Dict, question_index: int,
+                                previous_performance: float = None) -> str:
+        """Generate adaptive interview question"""
+        difficulty = self._calculate_difficulty(previous_performance)
+
+        prompt = f"""Generate an interview question for {session_data['role']} position.
+
+Context:
+- Role: {session_data['role']}
+- Company: {session_data['company']}
+- Difficulty level: {difficulty}
+- Question number: {question_index + 1}
+
+The question should be specific and challenging.
+Return only the question text, no additional content."""
+
+        question = await self._call_llm(prompt)
+        return question.strip()
+
+    async def evaluate_answer(self, question: str, answer: str, role: str,
+                              skill_level: str = "intermediate") -> Dict:
+        """Evaluate candidate's answer"""
+        prompt = f"""Evaluate this interview answer for a {role} position.
+
+Question: {question}
+
+Candidate's Answer: {answer}
+
+Provide:
+1. Score (0-100)
+2. Feedback (constructive, 2-3 sentences)
+3. Areas of strength (list of strings)
+4. Areas to improve (list of strings, with specific actionable tips)
+5. Model answer (the ideal/best answer to this question, 3-5 sentences)
+
+Return ONLY valid JSON with keys: score, feedback, strengths, improvements, model_answer
+Do not include any markdown formatting or code blocks."""
+
+        response = await self._call_llm(prompt)
+        return self._parse_json(response)
+
+    async def generate_report(self, session_data: Dict, all_evaluations: List[Dict]) -> Dict:
+        """Generate comprehensive interview report"""
+        evaluations_text = "\n".join([
+            f"Q{i+1}: {e['feedback']}" for i, e in enumerate(all_evaluations)
+        ])
+
+        prompt = f"""Generate an interview report for {session_data['role']} position at {session_data['company']}.
+
+Performance Data:
+{evaluations_text}
+
+Provide:
+1. Overall score (0-100)
+2. Summary (2-3 sentences)
+3. Top 3 strengths
+4. Top 3 weaknesses
+5. Top 3 recommendations
+
+Return ONLY valid JSON with keys: overall_score, summary, strengths, weaknesses, recommendations
+Do not include any markdown formatting or code blocks."""
+
+        response = await self._call_llm(prompt)
+        return self._parse_json(response)
+
+    def _parse_json(self, response: str) -> Dict:
+        """Parse JSON from LLM response, handling markdown code blocks"""
+        cleaned = response.strip()
+        cleaned = re.sub(r'^```(?:json)?\s*\n?', '', cleaned)
+        cleaned = re.sub(r'\n?```\s*$', '', cleaned)
+        cleaned = cleaned.strip()
+        return json.loads(cleaned)
+
+    async def _call_llm(self, prompt: str) -> str:
+        """Make API call to LLM provider"""
+        if self.api_provider == "openai":
+            return await self._call_openai(prompt)
+        elif self.api_provider == "claude":
+            return await self._call_claude(prompt)
+        elif self.api_provider == "gemini":
+            return await self._call_gemini(prompt)
+        else:
+            raise ValueError(f"Unsupported LLM provider: {self.api_provider}")
+
+    async def _call_openai(self, prompt: str) -> str:
+        """Call OpenAI API"""
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=self.api_key)
+
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are an expert interview conductor. Always respond with valid JSON when asked."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=1000
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            raise Exception(f"OpenAI API error: {str(e)}")
+
+    async def _call_claude(self, prompt: str) -> str:
+        """Call Claude API"""
+        try:
+            import anthropic
+            client = anthropic.Anthropic(api_key=self.api_key)
+
+            response = client.messages.create(
+                model=self.model,
+                max_tokens=1000,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            return response.content[0].text
+        except Exception as e:
+            raise Exception(f"Claude API error: {str(e)}")
+
+    async def _call_gemini(self, prompt: str) -> str:
+        """Call Google Gemini API"""
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=self.api_key)
+
+            model = genai.GenerativeModel(self.model)
+            response = model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            raise Exception(f"Gemini API error: {str(e)}")
+
+    @staticmethod
+    def _calculate_difficulty(previous_performance: float) -> str:
+        """Calculate question difficulty based on previous performance"""
+        if previous_performance is None:
+            return "medium"
+        elif previous_performance >= 80:
+            return "hard"
+        elif previous_performance >= 60:
+            return "medium"
+        else:
+            return "easy"

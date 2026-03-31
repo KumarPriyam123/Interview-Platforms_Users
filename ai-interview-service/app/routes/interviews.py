@@ -1,1 +1,279 @@
-from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPExceptionfrom sqlalchemy.ext.asyncio import AsyncSessionfrom app.database import get_dbfrom app.schemas.schemas import InterviewSessionResponse, AnswerSubmission, FeedbackResponse, InterviewReportfrom app.services.interview_service import InterviewServicefrom app.services.llm_service import LLMServicefrom app.utils.resume_extractor import ResumeExtractorimport tempfileimport osfrom pydantic import EmailStrrouter = APIRouter()llm_service = LLMService()INTERVIEW_QUESTIONS_COUNT = 10@router.post("/start")async def start_interview(    file: UploadFile = File(...),    role: str = Form(...),    company: str = Form(...),    email: str = Form(...),    db: AsyncSession = Depends(get_db)):    """Start a new interview session by uploading resume"""    try:        # Validate inputs        if not all([file, role, company, email]):            raise HTTPException(status_code=400, detail="Missing required fields")                # Save uploaded file temporarily        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as tmp_file:            content = await file.read()            tmp_file.write(content)            tmp_path = tmp_file.name                try:            # Extract text from resume            resume_text = ResumeExtractor.extract_text_from_file(tmp_path)                        # Extract skills using LLM            resume_data = await llm_service.extract_skills_from_resume(resume_text)                        # Create interview session            session = await InterviewService.create_session(                db, email, company, role, resume_text, resume_data            )                        # Create interview plan            plan = await llm_service.create_interview_plan(resume_data, role, company)            session.interview_plan = plan            await db.commit()                        # Generate and add first question            first_question = await llm_service.generate_question(                {"role": role, "company": company},                question_index=0            )            await InterviewService.add_question(db, session.id, 0, first_question)                        return {                "session_id": session.id,                "email": session.email,                "company": session.company,                "role": session.role,                "created_at": session.created_at            }        finally:            # Clean up temp file            if os.path.exists(tmp_path):                os.unlink(tmp_path)        except HTTPException as e:        raise e    except Exception as e:        raise HTTPException(status_code=500, detail=str(e))@router.get("/{session_id}/question")async def get_question(session_id: str, db: AsyncSession = Depends(get_db)):    """Get the next interview question"""    try:        session = await InterviewService.get_session(db, session_id)        if not session:            raise HTTPException(status_code=404, detail="Session not found")                if session.status == "completed":            return {"status": "completed"}                current_index = await InterviewService.get_current_question_index(db, session_id)                # Check if we've reached the question limit        if current_index >= INTERVIEW_QUESTIONS_COUNT:            session.status = "completed"            await db.commit()            return {"status": "completed"}                # Get or generate question        questions = await InterviewService.get_all_questions(db, session_id)                if len(questions) <= current_index:            # Generate new question            average_score = _calculate_average_score(questions) if questions else None            new_question = await llm_service.generate_question(                {"role": session.role, "company": session.company},                question_index=current_index,                previous_performance=average_score            )            await InterviewService.add_question(db, session_id, current_index, new_question)            question_text = new_question        else:            question_text = questions[current_index].question_text                return {            "question": question_text,            "status": "active"        }        except HTTPException as e:        raise e    except Exception as e:        raise HTTPException(status_code=500, detail=str(e))@router.post("/{session_id}/answer")async def submit_answer(    session_id: str,    submission: AnswerSubmission,    db: AsyncSession = Depends(get_db)):    """Submit an answer and get feedback"""    try:        session = await InterviewService.get_session(db, session_id)        if not session:            raise HTTPException(status_code=404, detail="Session not found")                current_index = await InterviewService.get_current_question_index(db, session_id)        questions = await InterviewService.get_all_questions(db, session_id)                if current_index >= len(questions):            raise HTTPException(status_code=400, detail="No active question")                current_question = questions[current_index]                # Evaluate answer using LLM        evaluation = await llm_service.evaluate_answer(            question=current_question.question_text,            answer=submission.answer,            role=session.role        )                # Store evaluation        await InterviewService.submit_answer(            db,            session_id,            current_index,            submission.answer,            evaluation.get("feedback", ""),            evaluation.get("score", 0)        )                # Move to next question        await InterviewService.update_question_index(db, session_id, current_index + 1)                return {            "feedback": evaluation.get("feedback", ""),            "score": evaluation.get("score", 0),            "strengths": evaluation.get("strengths", []),            "improvements": evaluation.get("improvements", []),            "model_answer": evaluation.get("model_answer", "")        }        except HTTPException as e:        raise e    except Exception as e:        raise HTTPException(status_code=500, detail=str(e))@router.get("/{session_id}/report")async def get_report(session_id: str, db: AsyncSession = Depends(get_db)):    """Get the interview report"""    try:        session = await InterviewService.get_session(db, session_id)        if not session:            raise HTTPException(status_code=404, detail="Session not found")                # Check if report already exists        existing_report = await InterviewService.get_report(db, session_id)        if existing_report:            questions = await InterviewService.get_all_questions(db, session_id)            return {                "overall_score": existing_report.overall_score,                "summary": existing_report.summary,                "strengths": existing_report.strengths,                "weaknesses": existing_report.weaknesses,                "recommendations": existing_report.recommendations,                "questions": [                    {                        "question": q.question_text,                        "answer": q.user_answer,                        "score": q.score,                        "feedback": q.feedback                    } for q in questions                ]            }                # Generate new report        questions = await InterviewService.get_all_questions(db, session_id)        evaluations = [            {                "feedback": q.feedback,                "score": q.score            } for q in questions if q.score is not None        ]                if not evaluations:            raise HTTPException(status_code=400, detail="No evaluated questions yet")                report_data = await llm_service.generate_report(            {"role": session.role, "company": session.company},            evaluations        )                # Save report        await InterviewService.create_report(            db,            session_id,            report_data.get("overall_score", 0),            report_data.get("summary", ""),            report_data.get("strengths", []),            report_data.get("weaknesses", []),            report_data.get("recommendations", [])        )                return {            "overall_score": report_data.get("overall_score", 0),            "summary": report_data.get("summary", ""),            "strengths": report_data.get("strengths", []),            "weaknesses": report_data.get("weaknesses", []),            "recommendations": report_data.get("recommendations", []),            "questions": [                {                    "question": q.question_text,                    "answer": q.user_answer,                    "score": q.score,                    "feedback": q.feedback                } for q in questions            ]        }        except HTTPException as e:        raise e    except Exception as e:        raise HTTPException(status_code=500, detail=str(e))@router.post("/{session_id}/end")async def end_interview(session_id: str, db: AsyncSession = Depends(get_db)):    """End the interview early"""    try:        session = await InterviewService.get_session(db, session_id)        if not session:            raise HTTPException(status_code=404, detail="Session not found")                session.status = "completed"        await db.commit()                return {"status": "ended"}        except Exception as e:        raise HTTPException(status_code=500, detail=str(e))def _calculate_average_score(questions):    """Calculate average score from answered questions"""    scores = [q.score for q in questions if q.score is not None]    if not scores:        return None    return sum(scores) / len(scores)
+from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import get_db
+from app.schemas.schemas import InterviewSessionResponse, AnswerSubmission, FeedbackResponse, InterviewReport
+from app.services.interview_service import InterviewService
+from app.services.llm_service import LLMService
+from app.utils.resume_extractor import ResumeExtractor
+import tempfile
+import os
+from pydantic import EmailStr
+
+router = APIRouter()
+llm_service = LLMService()
+INTERVIEW_QUESTIONS_COUNT = 10
+
+
+@router.post("/start")
+async def start_interview(
+    file: UploadFile = File(...),
+    role: str = Form(...),
+    company: str = Form(...),
+    email: str = Form(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """Start a new interview session by uploading resume"""
+    try:
+        # Validate inputs
+        if not all([file, role, company, email]):
+            raise HTTPException(status_code=400, detail="Missing required fields")
+
+        # Save uploaded file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as tmp_file:
+            content = await file.read()
+            tmp_file.write(content)
+            tmp_path = tmp_file.name
+
+        try:
+            # Extract text from resume
+            resume_text = ResumeExtractor.extract_text_from_file(tmp_path)
+
+            # Extract skills using LLM
+            resume_data = await llm_service.extract_skills_from_resume(resume_text)
+
+            # Create interview session
+            session = await InterviewService.create_session(
+                db, email, company, role, resume_text, resume_data
+            )
+
+            # Create interview plan
+            plan = await llm_service.create_interview_plan(resume_data, role, company)
+            session.interview_plan = plan
+            await db.commit()
+
+            # Generate and add first question
+            first_question = await llm_service.generate_question(
+                {"role": role, "company": company},
+                question_index=0
+            )
+            await InterviewService.add_question(db, session.id, 0, first_question)
+
+            return {
+                "session_id": session.id,
+                "email": session.email,
+                "company": session.company,
+                "role": session.role,
+                "created_at": session.created_at
+            }
+        finally:
+            # Clean up temp file
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{session_id}/question")
+async def get_question(session_id: str, db: AsyncSession = Depends(get_db)):
+    """Get the next interview question"""
+    try:
+        session = await InterviewService.get_session(db, session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        if session.status == "completed":
+            return {"status": "completed"}
+
+        current_index = await InterviewService.get_current_question_index(db, session_id)
+
+        # Check if we've reached the question limit
+        if current_index >= INTERVIEW_QUESTIONS_COUNT:
+            session.status = "completed"
+            await db.commit()
+            return {"status": "completed"}
+
+        # Get or generate question
+        questions = await InterviewService.get_all_questions(db, session_id)
+
+        if len(questions) <= current_index:
+            # Generate new question
+            average_score = _calculate_average_score(questions) if questions else None
+            new_question = await llm_service.generate_question(
+                {"role": session.role, "company": session.company},
+                question_index=current_index,
+                previous_performance=average_score
+            )
+            await InterviewService.add_question(db, session_id, current_index, new_question)
+            question_text = new_question
+        else:
+            question_text = questions[current_index].question_text
+
+        return {
+            "question": question_text,
+            "status": "active"
+        }
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{session_id}/answer")
+async def submit_answer(
+    session_id: str,
+    submission: AnswerSubmission,
+    db: AsyncSession = Depends(get_db)
+):
+    """Submit an answer and get feedback"""
+    try:
+        session = await InterviewService.get_session(db, session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        current_index = await InterviewService.get_current_question_index(db, session_id)
+        questions = await InterviewService.get_all_questions(db, session_id)
+
+        if current_index >= len(questions):
+            raise HTTPException(status_code=400, detail="No active question")
+
+        current_question = questions[current_index]
+
+        # Evaluate answer using LLM
+        evaluation = await llm_service.evaluate_answer(
+            question=current_question.question_text,
+            answer=submission.answer,
+            role=session.role
+        )
+
+        # Store evaluation
+        await InterviewService.submit_answer(
+            db,
+            session_id,
+            current_index,
+            submission.answer,
+            evaluation.get("feedback", ""),
+            evaluation.get("score", 0)
+        )
+
+        # Move to next question
+        await InterviewService.update_question_index(db, session_id, current_index + 1)
+
+        return {
+            "feedback": evaluation.get("feedback", ""),
+            "score": evaluation.get("score", 0),
+            "strengths": evaluation.get("strengths", []),
+            "improvements": evaluation.get("improvements", []),
+            "model_answer": evaluation.get("model_answer", "")
+        }
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{session_id}/report")
+async def get_report(session_id: str, db: AsyncSession = Depends(get_db)):
+    """Get the interview report"""
+    try:
+        session = await InterviewService.get_session(db, session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        # Check if report already exists
+        existing_report = await InterviewService.get_report(db, session_id)
+        if existing_report:
+            questions = await InterviewService.get_all_questions(db, session_id)
+            return {
+                "overall_score": existing_report.overall_score,
+                "summary": existing_report.summary,
+                "strengths": existing_report.strengths,
+                "weaknesses": existing_report.weaknesses,
+                "recommendations": existing_report.recommendations,
+                "questions": [
+                    {
+                        "question": q.question_text,
+                        "answer": q.user_answer,
+                        "score": q.score,
+                        "feedback": q.feedback
+                    } for q in questions
+                ]
+            }
+
+        # Generate new report
+        questions = await InterviewService.get_all_questions(db, session_id)
+        evaluations = [
+            {
+                "feedback": q.feedback,
+                "score": q.score
+            } for q in questions if q.score is not None
+        ]
+
+        if not evaluations:
+            raise HTTPException(status_code=400, detail="No evaluated questions yet")
+
+        report_data = await llm_service.generate_report(
+            {"role": session.role, "company": session.company},
+            evaluations
+        )
+
+        # Save report
+        await InterviewService.create_report(
+            db,
+            session_id,
+            report_data.get("overall_score", 0),
+            report_data.get("summary", ""),
+            report_data.get("strengths", []),
+            report_data.get("weaknesses", []),
+            report_data.get("recommendations", [])
+        )
+
+        return {
+            "overall_score": report_data.get("overall_score", 0),
+            "summary": report_data.get("summary", ""),
+            "strengths": report_data.get("strengths", []),
+            "weaknesses": report_data.get("weaknesses", []),
+            "recommendations": report_data.get("recommendations", []),
+            "questions": [
+                {
+                    "question": q.question_text,
+                    "answer": q.user_answer,
+                    "score": q.score,
+                    "feedback": q.feedback
+                } for q in questions
+            ]
+        }
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{session_id}/end")
+async def end_interview(session_id: str, db: AsyncSession = Depends(get_db)):
+    """End the interview early"""
+    try:
+        session = await InterviewService.get_session(db, session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        session.status = "completed"
+        await db.commit()
+
+        return {"status": "ended"}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _calculate_average_score(questions):
+    """Calculate average score from answered questions"""
+    scores = [q.score for q in questions if q.score is not None]
+    if not scores:
+        return None
+    return sum(scores) / len(scores)

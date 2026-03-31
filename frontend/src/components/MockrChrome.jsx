@@ -16,7 +16,7 @@ export default function MockrChrome({ navItems }) {
     <header className="mockr-topbar">
       <div className="mockr-topbar__left">
         <NavLink to="/dashboard" className="mockr-brand">
-          <span className="mockr-brand__mark">MOCKR</span>
+          <span className="mockr-brand__mark">Talent IQ</span>
         </NavLink>
 
         <nav className="mockr-topbar__nav">

@@ -1,10 +1,12 @@
 import { useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import MockrChrome from '../components/MockrChrome'
 import {
   initialProfile,
   profileSnapshot,
   profileTabs,
 } from '../services/mockProductData'
+import { mockIndustryLeaders } from '../services/mockInterviewData'
 
 function MatchBar({ label, value, color }) {
   return (
@@ -36,6 +38,7 @@ export default function ProfileVerificationPage({ activeTab = 'profile' }) {
   const [profile, setProfile] = useState(initialProfile)
   const [isPublicProfile, setIsPublicProfile] = useState(true)
   const fileInputRef = useRef(null)
+  const navigate = useNavigate()
 
   const pageLabel = activeTab === 'matches'
     ? 'Edit fields to improve role alignment.'
@@ -67,11 +70,13 @@ export default function ProfileVerificationPage({ activeTab = 'profile' }) {
 
       <main className="mockr-frame mockr-profile">
         <section className="mockr-profile__main">
-          <div className="mockr-section__heading">
-            <div>
-              <h1>Resume Upload</h1>
-            </div>
-          </div>
+          {activeTab === 'profile' ? (
+            <>
+              <div className="mockr-section__heading">
+                <div>
+                  <h1>Resume Upload</h1>
+                </div>
+              </div>
 
           <div className="mockr-card mockr-upload-card">
             <input
@@ -101,6 +106,27 @@ export default function ProfileVerificationPage({ activeTab = 'profile' }) {
               <div className="mockr-inline-metric__track">
                 <span className="mockr-inline-metric__fill is-green" style={{ width: '100%' }} />
               </div>
+            </div>
+          </div>
+
+          <div className="mockr-card mockr-form-card" style={{ marginTop: '1.5rem', marginBottom: '1.5rem' }}>
+            <div className="mockr-form-card__header">
+              <div className="mockr-step">
+                <h3>Target Role / Job Description</h3>
+              </div>
+            </div>
+            <div className="mockr-form-grid" style={{ display: 'block' }}>
+              <label className="mockr-field is-wide">
+                <span className="mockr-field__meta">
+                  <span>Paste the job description to improve AI matching accuracy</span>
+                </span>
+                <textarea
+                  value={profile.targetRoleDesc || ''}
+                  onChange={updateProfile('targetRoleDesc')}
+                  rows={4}
+                  placeholder="e.g. Seeking a Senior React Developer with 5+ years of experience..."
+                />
+              </label>
             </div>
           </div>
 
@@ -231,9 +257,54 @@ export default function ProfileVerificationPage({ activeTab = 'profile' }) {
 
             <div className="mockr-footer-actions">
               <button type="button" className="mockr-button mockr-button--ghost">Discard Changes</button>
-              <button type="button" className="mockr-button mockr-button--dark">Save & Finalize Profile</button>
+              <button type="button" className="mockr-button mockr-button--dark" onClick={() => navigate('/job-matches')}>Save & Finalize Profile</button>
             </div>
           </section>
+            </>
+          ) : (
+            <>
+              <div className="mockr-section__heading">
+                <div>
+                  <h1>Matched Experts</h1>
+                  <p>Based on your profile, here are the top industry leaders for your mock interview.</p>
+                </div>
+              </div>
+              <section className="leaders-grid" style={{ marginTop: '2rem' }}>
+                {mockIndustryLeaders.map((leader) => (
+                  <article key={leader.id} className="card">
+                    <div className="icon-sq">👤</div>
+                    <h3 style={{ color: 'white' }}>{leader.name}</h3>
+                    <p>{leader.role}</p>
+
+                    <div className="leader-meta">
+                      <span>{leader.experience}</span>
+                      <span>⭐ {leader.rating}</span>
+                    </div>
+
+                    <div className="leader-meta">
+                      <span>{leader.focus}</span>
+                    </div>
+
+                    <div style={{ marginTop: '1rem' }}>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => navigate('/industry-leader-interview', {
+                          state: {
+                            interviewer: leader,
+                            roomId: `interview-${leader.id}`,
+                            userId: profile.firstName || 'Candidate',
+                          },
+                        })}
+                      >
+                        Start Live Interview
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </section>
+            </>
+          )}
         </section>
 
         <aside className="mockr-profile__rail">
