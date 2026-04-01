@@ -5,16 +5,38 @@ import {
   answerCounterQuestion,
   answerQuestion,
   askDoubt,
+  executeCodingAnswer,
   getAllQuestions,
   getInterviewReport,
   getQuestion,
   nextQuestion,
   startInterview,
   stopInterview,
+  cleanQuestion,
 } from "../controllers/interview.controller.js";
+import {
+  addCompanyContext,
+  addInterviewKnowledge,
+  getRagStatus,
+  searchRagKnowledge,
+  getRagDataset,
+  verifyRagQuestion,
+} from "../controllers/rag.controller.js";
+import { getMongoDatasetQuestions } from "../controllers/dataset.controller.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+// Qdrant RAG management
+router.get("/rag/status", getRagStatus);
+router.get("/rag/dataset", getRagDataset);
+router.get("/dataset/questions", getMongoDatasetQuestions);
+router.post("/rag/verify", verifyRagQuestion);
+router.post("/rag/company-context", addCompanyContext);
+router.post("/rag/knowledge", addInterviewKnowledge);
+router.post("/rag/search", searchRagKnowledge);
+router.post("/code/run", executeCodingAnswer);
+router.post("/clean-question", cleanQuestion);
 
 // Start interview (upload resume + generate all questions)
 router.post("/start", upload.single("file"), startInterview);

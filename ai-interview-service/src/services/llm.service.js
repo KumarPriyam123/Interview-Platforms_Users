@@ -9,10 +9,23 @@
  * - Comprehensive final report generation
  */
 
-import { retrieveInterviewContext, retrieveCompanyContext } from "./rag.service.js";
+import { retrieveInterviewContext, retrieveCompanyContext, sampleKnowledge } from "./rag.service.js";
+import { getRandomDatasetCodingQuestion } from "./dataset.service.js";
 
-const DEFAULT_PROVIDER = (process.env.LLM_PROVIDER || "gemini").toLowerCase();
-const DEFAULT_MODEL = process.env.LLM_MODEL || "gemini-2.0-flash";
+const DEFAULT_PROVIDER = "groq";
+const DEFAULT_MODELS = {
+  gemini: "gemini-1.5-flash",
+  openai: "gpt-4o-mini",
+  groq: "llama-3.3-70b-versatile",
+};
+
+const getLLMProvider = () => {
+  const provider = String(process.env.LLM_PROVIDER || DEFAULT_PROVIDER).toLowerCase();
+  return DEFAULT_MODELS[provider] ? provider : DEFAULT_PROVIDER;
+};
+
+const getLLMModel = (provider = getLLMProvider()) =>
+  process.env.LLM_MODEL || DEFAULT_MODELS[provider] || DEFAULT_MODELS[DEFAULT_PROVIDER];
 
 // ─── Utilities ───────────────────────────────────────────────
 
@@ -65,13 +78,628 @@ const parseJSONObject = (text, fallback) => {
   return fallback;
 };
 
+const normalizeQuestionText = (text = "") =>
+  String(text)
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const COMMON_WORDS = new Set([
+  "the", "a", "an", "and", "or", "to", "of", "for", "in", "on", "with", "is", "are", "be", "this", "that",
+  "how", "what", "why", "when", "where", "would", "could", "should", "your", "you", "about", "from", "into",
+]);
+
+const tokenizeMeaningfulWords = (text = "") =>
+  normalizeQuestionText(text)
+    .split(" ")
+    .filter((word) => word && word.length > 2 && !COMMON_WORDS.has(word));
+
+const isLikelyOffTopic = (question = "", answer = "") => {
+  const qWords = new Set(tokenizeMeaningfulWords(question));
+  const aWords = tokenizeMeaningfulWords(answer);
+
+  if (aWords.length === 0) return true;
+  if (aWords.length < 5) return true;
+
+  const overlap = aWords.filter((word) => qWords.has(word)).length;
+  const overlapRatio = qWords.size > 0 ? overlap / qWords.size : 0;
+  return overlapRatio < 0.12;
+};
+
+const countWords = (text = "") =>
+  String(text)
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+
+const buildCppStarterFromSignature = (questionText = "", cppSignature = "string solve(const string& input)") => `// ${questionText}
+#include <bits/stdc++.h>
+using namespace std;
+
+class Solution {
+public:
+    ${cppSignature} {
+        // TODO: write your solution
+    }
+};
+`;
+
+const normalizeDifficulty = (value, fallback = "medium") => {
+  const normalized = String(value || "").trim().toLowerCase();
+  return ["easy", "medium", "hard"].includes(normalized) ? normalized : fallback;
+};
+
+const escapeRegex = (value = "") => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const CONTENT_BLOCK_LABELS = [
+  "Title",
+  "Difficulty",
+  "Category",
+  "Topics",
+  "Problem Statement",
+  "Function Signature / Starter Code",
+  "Constraints",
+  "Examples / Sample Testcases",
+  "C++ Reference",
+  "Java Reference",
+  "Python Reference",
+  "JavaScript Reference",
+  "Hints",
+];
+
+const stripHtml = (text = "") =>
+  String(text || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const extractLabeledBlock = (content = "", label = "") => {
+  const otherLabels = CONTENT_BLOCK_LABELS.filter((item) => item !== label)
+    .map((item) => escapeRegex(item))
+    .join("|");
+  const pattern = new RegExp(`${escapeRegex(label)}:\\s*([\\s\\S]*?)(?=\\n\\n(?:${otherLabels}):|$)`, "i");
+  const match = String(content || "").match(pattern);
+  return match ? match[1].trim() : "";
+};
+
+const extractFirstCppSignature = (source = "") => {
+  const compact = String(source || "").replace(/\r/g, "");
+  const signatureMatch = compact.match(/([A-Za-z_][\w:<>\s*&]+?)\s+([A-Za-z_]\w*)\s*\(([^)]*)\)/);
+  if (!signatureMatch) return "";
+  return `${signatureMatch[1].trim()} solve(${signatureMatch[3].trim()})`;
+};
+
+const createCodingQuestion = ({
+  question,
+  difficulty = "hard",
+  cppSignature,
+  inputDescription,
+  outputDescription,
+  constraints = [],
+  examples = [],
+  visibleTestCases = [],
+  hiddenTestCases = [],
+  source = null,
+}) => ({
+  question,
+  difficulty,
+  type: "coding",
+  coding: {
+    executionStyle: "leetcode",
+    cppSignature,
+    starterCode: buildCppStarterFromSignature(question, cppSignature),
+    inputDescription,
+    outputDescription,
+    constraints,
+    examples,
+    visibleTestCases,
+    hiddenTestCases,
+    source,
+  },
+});
+
+const clonePlainObject = (value) => JSON.parse(JSON.stringify(value));
+
+const extractCppSignatureParts = (cppSignature = "") => {
+  const match = String(cppSignature || "").match(/^\s*(.+?)\s+solve\s*\((.*)\)\s*$/);
+  if (!match) {
+    return {
+      returnType: "string",
+      params: [],
+    };
+  }
+
+  const returnType = match[1].trim();
+  const paramsSource = match[2].trim();
+  const params = paramsSource
+    ? paramsSource.split(",").map((param) => {
+        const cleaned = param.trim().replace(/\s*=\s*.*$/, "");
+        const nameMatch = cleaned.match(/([A-Za-z_]\w*)\s*$/);
+        if (!nameMatch) return null;
+        const name = nameMatch[1];
+        const type = cleaned.slice(0, cleaned.lastIndexOf(name)).trim();
+        return { name, type };
+      }).filter(Boolean)
+    : [];
+
+  return {
+    returnType: returnType || "string",
+    params,
+  };
+};
+
+const inferCppTypeFromValue = (value) => {
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return "vector<int>";
+    }
+
+    return `vector<${inferCppTypeFromValue(value[0])}>`;
+  }
+
+  if (typeof value === "string") return "string";
+  if (typeof value === "boolean") return "bool";
+  if (typeof value === "number") return Number.isInteger(value) ? "int" : "double";
+
+  return "string";
+};
+
+const buildSignatureFromCaseKeys = (existingSignature = "", testCases = []) => {
+  const referenceCase = testCases.find((testCase) => testCase && typeof testCase === "object" && !Array.isArray(testCase));
+  const signatureParts = extractCppSignatureParts(existingSignature);
+
+  if (!referenceCase) {
+    return existingSignature || `${signatureParts.returnType || "string"} solve(const string& rawInput)`;
+  }
+
+  const caseKeys = Object.keys(referenceCase).filter((key) => key !== "output" && key !== "hidden");
+  if (caseKeys.length === 0) {
+    return existingSignature || `${signatureParts.returnType || "string"} solve(const string& rawInput)`;
+  }
+
+  const existingParamsByName = new Map(signatureParts.params.map((param) => [param.name, param.type]));
+  const rebuiltParams = caseKeys.map((key) => {
+    const inferredType = inferCppTypeFromValue(referenceCase[key]);
+    const existingType = existingParamsByName.get(key);
+    return `${existingType || inferredType} ${key}`;
+  });
+
+  return `${signatureParts.returnType || "string"} solve(${rebuiltParams.join(", ")})`;
+};
+
+const createExamplesFromCases = (visibleTestCases = []) =>
+  visibleTestCases.slice(0, 2).map((testCase) => {
+    const inputShape = Object.entries(testCase)
+      .filter(([key]) => key !== "output" && key !== "hidden")
+      .map(([key, value]) => `${key} = ${JSON.stringify(value)}`)
+      .join(", ");
+
+    return {
+      input: inputShape,
+      output: String(testCase.output || ""),
+      explanation: "",
+    };
+  });
+
+const CODING_QUESTION_BANK = [
+  createCodingQuestion({
+    question: "A stream of sensor readings arrives one by one. For every window of size k, output the first reading that appears exactly once in that window. If no such reading exists, output -1. Return the answer for every valid window.",
+    cppSignature: "vector<int> solve(vector<int>& arr, int k)",
+    inputDescription: "arr is the list of sensor readings and k is the sliding window size.",
+    outputDescription: "Return a vector where each element is the first unique reading in that window, or -1 if none exists.",
+    constraints: ["1 <= arr.length <= 2 * 10^5", "1 <= k <= arr.length", "Reading values may repeat and can be large integers."],
+    examples: [
+      { input: 'arr = [4,5,4,6,5,7,8,6], k = 3', output: '5 5 6 6 7 7', explanation: "Each output entry is the first value in the current window whose frequency is exactly one." },
+      { input: 'arr = [1,1,1,1,1], k = 3', output: '-1 -1 -1', explanation: "Every window contains only duplicates, so there is no unique value." },
+    ],
+    visibleTestCases: [
+      { arr: [4, 5, 4, 6, 5, 7, 8, 6], k: 3, output: "5 5 6 6 7 7" },
+      { arr: [1, 1, 1, 1, 1], k: 3, output: "-1 -1 -1" },
+    ],
+    hiddenTestCases: [
+      { arr: [2, 3, 2, 4, 5, 4, 6], k: 4, output: "3 3 2 5" , hidden: true},
+      { arr: [9], k: 1, output: "9", hidden: true },
+    ],
+  }),
+  createCodingQuestion({
+    question: "Given a dependency graph of services where each service points to the services it depends on, return whether the deployment order is valid. If it is valid, return one topological order; otherwise return one cycle that proves the graph is invalid.",
+    cppSignature: "vector<int> solve(int n, vector<vector<int>>& dependencies)",
+    inputDescription: "n is the number of services labeled 0 to n-1. dependencies contains pairs [service, dependency].",
+    outputDescription: "Return a vector containing a valid deployment order, or a cycle path if a cycle exists.",
+    constraints: ["1 <= n <= 10^5", "0 <= dependencies.length <= 2 * 10^5", "The graph may be disconnected."],
+    examples: [
+      { input: 'n = 4, dependencies = [[1,0],[2,0],[3,1],[3,2]]', output: '0 1 2 3', explanation: "Any valid topological ordering is acceptable." },
+      { input: 'n = 3, dependencies = [[0,1],[1,2],[2,0]]', output: '0 1 2 0', explanation: "A cycle path is returned when deployment is impossible." },
+    ],
+    visibleTestCases: [
+      { n: 4, dependencies: [[1, 0], [2, 0], [3, 1], [3, 2]], output: "0 1 2 3" },
+      { n: 3, dependencies: [[0, 1], [1, 2], [2, 0]], output: "0 1 2 0" },
+    ],
+    hiddenTestCases: [
+      { n: 5, dependencies: [[1, 0], [2, 1], [3, 1], [4, 2]], output: "0 1 2 3 4", hidden: true },
+      { n: 2, dependencies: [[0, 1], [1, 0]], output: "0 1 0", hidden: true },
+    ],
+  }),
+  createCodingQuestion({
+    question: "Given an array of daily prices, choose at most two non-overlapping buy/sell transactions to maximize profit. Return the profit achieved for each day range as [buy1, sell1, buy2, sell2, totalProfit], using -1 for the second pair if only one transaction is used.",
+    cppSignature: "vector<int> solve(vector<int>& prices)",
+    inputDescription: "prices[i] is the stock price on day i.",
+    outputDescription: "Return five integers describing the chosen day ranges and the total profit.",
+    constraints: ["1 <= prices.length <= 10^5", "0 <= prices[i] <= 10^5"],
+    examples: [
+      { input: 'prices = [3,3,5,0,0,3,1,4]', output: '0 2 3 7 6', explanation: "Buy on day 0 sell day 2, then buy day 3 sell day 7 for total profit 6." },
+      { input: 'prices = [7,6,4,3,1]', output: '-1 -1 -1 -1 0', explanation: "No profitable trade exists." },
+    ],
+    visibleTestCases: [
+      { prices: [3, 3, 5, 0, 0, 3, 1, 4], output: "0 2 3 7 6" },
+      { prices: [7, 6, 4, 3, 1], output: "-1 -1 -1 -1 0" },
+    ],
+    hiddenTestCases: [
+      { prices: [1, 2, 3, 4, 5], output: "0 4 -1 -1 4", hidden: true },
+      { prices: [2, 1, 2, 0, 1], output: "1 2 3 4 2", hidden: true },
+    ],
+  }),
+];
+
+const pickRandomCodingQuestion = () =>
+  clonePlainObject(CODING_QUESTION_BANK[Math.floor(Math.random() * CODING_QUESTION_BANK.length)]);
+
+const normalizeCodingSource = (source = null) => {
+  if (!source || typeof source !== "object") return null;
+  return {
+    collection: String(source.collection || ""),
+    questionId: String(source.questionId || ""),
+    title: String(source.title || ""),
+    platform: String(source.platform || ""),
+    dataset: String(source.dataset || source.source || ""),
+    difficulty: normalizeDifficulty(source.difficulty, "hard"),
+    tags: Array.isArray(source.tags) ? source.tags.map(String) : [],
+    rawContent: String(source.rawContent || ""),
+    verifiedByLLM: Boolean(source.verifiedByLLM),
+  };
+};
+
+const normalizeCodingPayload = (coding, fallbackQuestion, questionText = "") => {
+  const fallback = fallbackQuestion?.coding || pickRandomCodingQuestion().coding;
+  const normalizeCase = (testCase) => ({
+    ...testCase,
+    output: String(testCase?.output ?? ""),
+    hidden: Boolean(testCase?.hidden),
+  });
+  const visibleTestCases = Array.isArray(coding?.visibleTestCases) && coding.visibleTestCases.length > 0
+    ? coding.visibleTestCases.map(normalizeCase)
+    : fallback.visibleTestCases;
+  const hiddenTestCases = Array.isArray(coding?.hiddenTestCases) && coding.hiddenTestCases.length > 0
+    ? coding.hiddenTestCases.map((testCase) => ({ ...normalizeCase(testCase), hidden: true }))
+    : fallback.hiddenTestCases;
+  const repairedSignature = buildSignatureFromCaseKeys(
+    String(coding?.cppSignature || fallback.cppSignature || "vector<int> solve(vector<int>& arr, int k)"),
+    [...visibleTestCases, ...hiddenTestCases]
+  );
+  const normalizedExamples = Array.isArray(coding?.examples) && coding.examples.length > 0
+    ? coding.examples.map((example) => ({
+        input: String(example?.input || ""),
+        output: String(example?.output || ""),
+        explanation: String(example?.explanation || ""),
+      }))
+    : (visibleTestCases.length > 0 ? createExamplesFromCases(visibleTestCases) : fallback.examples);
+
+  return {
+    executionStyle: "leetcode",
+    cppSignature: repairedSignature,
+    starterCode: buildCppStarterFromSignature(questionText || fallbackQuestion?.question || "", repairedSignature),
+    inputDescription: String(coding?.inputDescription || fallback.inputDescription || ""),
+    outputDescription: String(coding?.outputDescription || fallback.outputDescription || ""),
+    constraints: Array.isArray(coding?.constraints) && coding.constraints.length > 0
+      ? coding.constraints.map(String)
+      : fallback.constraints,
+    examples: normalizedExamples,
+    visibleTestCases,
+    hiddenTestCases,
+    source: normalizeCodingSource(coding?.source) || normalizeCodingSource(fallback.source),
+  };
+};
+
+const normalizeCodingQuestion = (question, fallbackQuestion = pickRandomCodingQuestion()) => ({
+  question: String(question?.question || fallbackQuestion.question),
+  difficulty: normalizeDifficulty(question?.difficulty, fallbackQuestion.difficulty),
+  type: "coding",
+  coding: normalizeCodingPayload(question?.coding, fallbackQuestion, String(question?.question || fallbackQuestion.question)),
+});
+
+const createGenericCodingPayload = (questionText = "") => {
+  const cppSignature = "string solve(const string& rawInput)";
+  return {
+    executionStyle: "leetcode",
+    cppSignature,
+    starterCode: buildCppStarterFromSignature(questionText, cppSignature),
+    inputDescription: "Parse the required values from the raw input string inside solve(...).",
+    outputDescription: "Return the final answer as a string.",
+    constraints: ["Use an efficient solution that matches the problem requirements."],
+    examples: [],
+    visibleTestCases: [],
+    hiddenTestCases: [],
+    source: null,
+  };
+};
+
+const buildCodingSourceFromKnowledgeHit = (hit) => ({
+  collection: String(hit?.metadata?.category || "problems"),
+  questionId: String(hit?.metadata?.questionId || hit?.id || ""),
+  title: String(hit?.metadata?.title || ""),
+  platform: String(hit?.metadata?.platform || "generic"),
+  dataset: String(hit?.metadata?.source || ""),
+  difficulty: normalizeDifficulty(hit?.metadata?.difficulty, "hard"),
+  tags: Array.isArray(hit?.metadata?.tags) ? hit.metadata.tags.map(String) : [],
+  rawContent: String(hit?.content || ""),
+  verifiedByLLM: false,
+});
+
+const buildKnowledgeSeedContext = (label, hits = []) =>
+  hits.map((hit, index) => {
+    const title = String(hit?.metadata?.title || `Candidate ${index + 1}`);
+    const difficulty = normalizeDifficulty(hit?.metadata?.difficulty, "medium");
+    const statement = stripHtml(extractLabeledBlock(hit?.content || "", "Problem Statement") || hit?.content || "").slice(0, 700);
+    return `${label} Candidate ${index + 1}:
+Title: ${title}
+Difficulty: ${difficulty}
+Source: ${String(hit?.metadata?.source || "vector_db")}
+Content:
+${statement}`;
+  }).join("\n---\n");
+
+const buildFallbackCodingQuestionFromKnowledgeHit = (hit) => {
+  const source = buildCodingSourceFromKnowledgeHit(hit);
+  const title = source.title || "Vector DB Coding Problem";
+  const statement = stripHtml(extractLabeledBlock(hit?.content || "", "Problem Statement")) || title;
+  const signatureBlock = extractLabeledBlock(hit?.content || "", "Function Signature / Starter Code");
+  const constraintsBlock = extractLabeledBlock(hit?.content || "", "Constraints");
+  const sampleBlock = extractLabeledBlock(hit?.content || "", "Examples / Sample Testcases");
+  const signature = extractFirstCppSignature(signatureBlock) || "string solve(const string& rawInput)";
+  const constraints = constraintsBlock
+    ? constraintsBlock.split(/\n+/).map((line) => stripHtml(line)).filter(Boolean).slice(0, 5)
+    : ["Use an efficient solution that matches the original problem requirements."];
+  const exampleText = stripHtml(sampleBlock);
+
+  return createCodingQuestion({
+    question: statement,
+    difficulty: source.difficulty,
+    cppSignature: signature,
+    inputDescription: "Implement the function using the parameters in the verified signature.",
+    outputDescription: "Return the result expected by the original problem statement.",
+    constraints,
+    examples: exampleText ? [{ input: exampleText, output: "", explanation: "Sample details extracted from the vector DB source." }] : [],
+    visibleTestCases: [],
+    hiddenTestCases: [],
+    source,
+  });
+};
+
+const selectCodingKnowledgeHit = (hits = []) => {
+  if (!Array.isArray(hits) || hits.length === 0) return null;
+  const hardHits = hits.filter((hit) => normalizeDifficulty(hit?.metadata?.difficulty, "medium") === "hard");
+  const pool = hardHits.length > 0 ? hardHits : hits;
+  return clonePlainObject(pool[Math.floor(Math.random() * pool.length)]);
+};
+
+export const verifyCodingQuestionFromKnowledgeHit = async (hit, { role, company }) => {
+  const fallbackQuestion = buildFallbackCodingQuestionFromKnowledgeHit(hit);
+  const source = buildCodingSourceFromKnowledgeHit(hit);
+  const sourceReference = [
+    source.title ? `Title: ${source.title}` : "",
+    source.difficulty ? `Difficulty: ${source.difficulty}` : "",
+    source.tags.length > 0 ? `Tags: ${source.tags.join(", ")}` : "",
+    extractLabeledBlock(hit?.content || "", "Problem Statement")
+      ? `Problem Statement:\n${extractLabeledBlock(hit?.content || "", "Problem Statement")}`
+      : `Problem Statement:\n${hit?.content || ""}`,
+    extractLabeledBlock(hit?.content || "", "Function Signature / Starter Code")
+      ? `Function Signature / Starter Code:\n${extractLabeledBlock(hit?.content || "", "Function Signature / Starter Code")}`
+      : "",
+    extractLabeledBlock(hit?.content || "", "Constraints")
+      ? `Constraints:\n${extractLabeledBlock(hit?.content || "", "Constraints")}`
+      : "",
+    extractLabeledBlock(hit?.content || "", "Examples / Sample Testcases")
+      ? `Examples / Sample Testcases:\n${extractLabeledBlock(hit?.content || "", "Examples / Sample Testcases")}`
+      : "",
+  ].filter(Boolean).join("\n\n");
+
+  const prompt = `You are verifying and structuring a coding interview problem that was retrieved from a vector database.
+
+Role: ${role}
+Company: ${company}
+
+Use ONLY the source material below as the source of truth for the problem. You may reorganize it into clean JSON and derive consistent sample/hidden cases, but do not switch to a different problem.
+
+Source material:
+${sourceReference}
+
+Return strictly valid JSON only:
+{
+  "question": "Clean problem statement for the interview UI",
+  "difficulty": "easy|medium|hard",
+  "cppSignature": "vector<int> solve(vector<int>& arr, int k)",
+  "inputDescription": "How the function parameters should be interpreted",
+  "outputDescription": "How the function output is compared",
+  "constraints": ["constraint 1", "constraint 2"],
+  "examples": [
+    { "input": "arr = [1,2,3], k = 2", "output": "3", "explanation": "short explanation" }
+  ],
+  "visibleTestCases": [
+    { "arr": [1,2,3], "k": 2, "output": "3" },
+    { "arr": [4,5,6], "k": 1, "output": "6" }
+  ],
+  "hiddenTestCases": [
+    { "arr": [7,8,9], "k": 2, "output": "9" },
+    { "arr": [2,2,2], "k": 1, "output": "2" }
+  ]
+}
+
+Rules:
+- Keep the exact same problem intent as the source material.
+- Use a LeetCode-style C++ Solution method signature and rename the method to solve(...).
+- Preserve parameter names between the signature and every test case.
+- If the source already implies a signature or sample shape, keep it aligned.
+- Keep exactly 2 visible test cases and 2 hidden test cases when possible.
+- Do not include markdown fences or commentary.`;
+
+  try {
+    const raw = await askLLM(prompt);
+    const parsed = parseJSONObject(raw, {});
+    return normalizeCodingQuestion({
+      question: String(parsed?.question || fallbackQuestion.question),
+      difficulty: normalizeDifficulty(parsed?.difficulty, fallbackQuestion.difficulty),
+      type: "coding",
+      coding: {
+        ...parsed,
+        source: {
+          ...source,
+          verifiedByLLM: true,
+        },
+      },
+    }, fallbackQuestion);
+  } catch (_error) {
+    return {
+      ...fallbackQuestion,
+      coding: {
+        ...fallbackQuestion.coding,
+        source,
+      },
+    };
+  }
+};
+
+const enrichCodingQuestion = async (question, { role, company }) => {
+  const questionText = String(question?.question || "").trim();
+  const fallbackQuestion = pickRandomCodingQuestion();
+
+  if (!questionText) {
+    return fallbackQuestion;
+  }
+
+  const prompt = `You are designing coding-round metadata for this EXACT problem statement:
+"${questionText}"
+
+Role: ${role}
+Company: ${company}
+
+Return strictly valid JSON only:
+{
+  "cppSignature": "vector<int> solve(vector<int>& arr, int k)",
+  "inputDescription": "How the function inputs should be interpreted",
+  "outputDescription": "What the function should return and how it will be compared",
+  "constraints": ["constraint 1", "constraint 2"],
+  "examples": [
+    { "input": "arr = [4,5,4,6,5,7,8,6], k = 3", "output": "5 5 6 6 7 7", "explanation": "short explanation" }
+  ],
+  "visibleTestCases": [
+    { "arr": [4,5,4,6,5,7,8,6], "k": 3, "output": "5 5 6 6 7 7" },
+    { "arr": [1,1,1,1,1], "k": 3, "output": "-1 -1 -1" }
+  ],
+  "hiddenTestCases": [
+    { "arr": [2,3,2,4,5,4,6], "k": 4, "output": "3 3 2 5" },
+    { "arr": [9], "k": 1, "output": "9" }
+  ]
+}
+
+Rules:
+- The signature, examples, visible tests, and hidden tests must all match the exact question text above.
+- Use C++ and a LeetCode-style Solution method signature only.
+- Visible and hidden test cases must use the exact same parameter names as the signature.
+- Do not invent a different problem.
+- Keep visible test cases to 2 and hidden test cases to 2.`;
+
+  try {
+    const raw = await askLLM(prompt);
+    const parsed = parseJSONObject(raw, {});
+    return {
+      question: questionText,
+      difficulty: ["easy", "medium", "hard"].includes(question?.difficulty) ? question.difficulty : "hard",
+      type: "coding",
+      coding: {
+        ...normalizeCodingPayload(parsed, fallbackQuestion, questionText),
+      },
+    };
+  } catch (_error) {
+    return {
+      question: questionText,
+      difficulty: ["easy", "medium", "hard"].includes(question?.difficulty) ? question.difficulty : "hard",
+      type: "coding",
+      coding: createGenericCodingPayload(questionText),
+    };
+  }
+};
+
+const ensureCodingQuestion = (sections = [], preferredCodingQuestion = null) =>
+  sections.map((section) => {
+    if (!/problem solving/i.test(section.title)) return section;
+
+    const questions = Array.isArray(section.questions) ? section.questions : [];
+    const normalizedQuestions = questions.map((question) =>
+      question.type === "coding" ? normalizeCodingQuestion(question) : question
+    );
+    const chosenCodingQuestion = preferredCodingQuestion
+      ? clonePlainObject(preferredCodingQuestion)
+      : (normalizedQuestions.find((question) => question.type === "coding") || pickRandomCodingQuestion());
+    const nonCodingQuestions = normalizedQuestions.filter((question) => question.type !== "coding");
+
+    return {
+      ...section,
+      questions: [chosenCodingQuestion, ...nonCodingQuestions].slice(0, Math.max(1, questions.length || 1)),
+    };
+  });
+
+const dedupeSections = (sections = [], fallbackSections = []) => {
+  const seen = new Set();
+  const normalizedSections = sections.map((section) => {
+    const uniqueQuestions = (Array.isArray(section.questions) ? section.questions : []).filter((question) => {
+      const normalized = normalizeQuestionText(question.question);
+      if (!normalized || seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
+
+    return {
+      ...section,
+      questions: uniqueQuestions,
+    };
+  }).filter((section) => section.questions.length > 0);
+
+  if (normalizedSections.length >= 5) return normalizedSections;
+
+  for (const fallbackSection of fallbackSections) {
+    const existing = normalizedSections.find((section) => section.title === fallbackSection.title);
+    const fallbackQuestions = fallbackSection.questions.filter((question) => {
+      const normalized = normalizeQuestionText(question.question);
+      if (!normalized || seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
+
+    if (existing) {
+      existing.questions.push(...fallbackQuestions.slice(0, Math.max(0, 3 - existing.questions.length)));
+    } else if (fallbackQuestions.length > 0) {
+      normalizedSections.push({
+        ...fallbackSection,
+        questions: fallbackQuestions,
+      });
+    }
+  }
+
+  return normalizedSections;
+};
+
 // ─── LLM Provider Calls ─────────────────────────────────────
 
 const callGemini = async (prompt) => {
   const apiKey = process.env.GEMINI_API_KEY || process.env.LLM_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY (or LLM_API_KEY) is missing");
 
-  const model = DEFAULT_MODEL;
+  const model = getLLMModel("gemini");
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const response = await fetch(url, {
@@ -96,7 +724,7 @@ const callOpenAI = async (prompt) => {
   const apiKey = process.env.OPENAI_API_KEY || process.env.LLM_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY (or LLM_API_KEY) is missing");
 
-  const model = DEFAULT_MODEL || "gpt-4o-mini";
+  const model = getLLMModel("openai");
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -123,8 +751,41 @@ const callOpenAI = async (prompt) => {
   return payload?.choices?.[0]?.message?.content || "";
 };
 
+const callGroq = async (prompt) => {
+  const apiKey = process.env.GROQ_API_KEY || process.env.LLM_API_KEY;
+  if (!apiKey) throw new Error("GROQ_API_KEY (or LLM_API_KEY) is missing");
+
+  const model = getLLMModel("groq");
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.5,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: "Return valid JSON only. Do not include markdown fences." },
+        { role: "user", content: prompt },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Groq API error: ${response.status} ${errorText}`);
+  }
+
+  const payload = await response.json();
+  return payload?.choices?.[0]?.message?.content || "";
+};
+
 const askLLM = async (prompt) => {
-  if (DEFAULT_PROVIDER === "openai") return callOpenAI(prompt);
+  const provider = getLLMProvider();
+  if (provider === "groq") return callGroq(prompt);
+  if (provider === "openai") return callOpenAI(prompt);
   return callGemini(prompt);
 };
 
@@ -186,10 +847,13 @@ ${resumeText || "No resume provided"}`;
 export const generateAllQuestions = async ({ resumeData, role, company }) => {
   // Get RAG context for better question generation
   let ragContext = "";
+  let preferredCodingQuestion = null;
   try {
-    const [interviewCtx, companyCtx] = await Promise.all([
+    const [interviewCtx, companyCtx, techSeeds, personalSeeds] = await Promise.all([
       retrieveInterviewContext({ role, company }),
       retrieveCompanyContext({ company, role }),
+      sampleKnowledge({ collection: "tech_questions", limit: 3, maxCandidates: 80 }),
+      sampleKnowledge({ collection: "personal_questions", limit: 3, maxCandidates: 80 }),
     ]);
 
     if (interviewCtx.length > 0) {
@@ -199,8 +863,23 @@ export const generateAllQuestions = async ({ resumeData, role, company }) => {
     if (companyCtx) {
       ragContext += "\n\nCompany-specific context:\n" + companyCtx;
     }
+    if (techSeeds.length > 0) {
+      ragContext += "\n\nVector DB technical-question seeds (use these as the primary source when relevant):\n";
+      ragContext += buildKnowledgeSeedContext("Technical", techSeeds);
+    }
+    if (personalSeeds.length > 0) {
+      ragContext += "\n\nVector DB personal-question seeds (use these as the primary source when relevant):\n";
+      ragContext += buildKnowledgeSeedContext("Behavioral", personalSeeds);
+    }
   } catch (_error) {
     // RAG context is optional
+  }
+
+  // Get coding question from MongoDB dataset instead of Qdrant/RAG
+  try {
+    preferredCodingQuestion = await getRandomDatasetCodingQuestion();
+  } catch (_error) {
+    console.warn("MongoDB dataset coding question fetch failed, will use fallback:", _error.message);
   }
 
   const fallbackSections = [
@@ -222,11 +901,17 @@ export const generateAllQuestions = async ({ resumeData, role, company }) => {
       ],
     },
     {
-      title: "Problem Solving & System Design",
+      title: "System Design",
       description: "Analytical and design thinking assessment",
       questions: [
         { question: "Design a real-time notification system. What technologies and patterns would you use?", difficulty: "hard" },
-        { question: "How would you handle a production incident? Walk me through your debugging process.", difficulty: "medium" },
+      ],
+    },
+    {
+      title: "Problem Solving",
+      description: "Coding and algorithmic reasoning",
+      questions: [
+        preferredCodingQuestion ? clonePlainObject(preferredCodingQuestion) : pickRandomCodingQuestion(),
       ],
     },
     {
@@ -249,7 +934,8 @@ Candidate profile:
 - Education: ${resumeData.education || "Not specified"}
 ${ragContext}
 
-Generate a complete set of interview questions organized into sections. Create 10-12 questions total across 4 sections.
+Generate a complete set of interview questions organized into sections. Create 8 questions total across 5 sections.
+Note: The coding question for "Problem Solving" section will be sourced separately from a dataset. You do NOT need to generate a coding question.
 
 Return strictly valid JSON with this structure:
 {
@@ -258,19 +944,44 @@ Return strictly valid JSON with this structure:
       "title": "Section Name",
       "description": "Brief description of what this section assesses",
       "questions": [
-        { "question": "The interview question text", "difficulty": "easy|medium|hard" }
+        {
+          "question": "The interview question text",
+          "difficulty": "easy|medium|hard",
+          "type": "text|coding",
+          "coding": {
+            "executionStyle": "leetcode",
+            "cppSignature": "vector<int> solve(vector<int>& arr, int k)",
+            "starterCode": "Optional starter code string",
+            "inputDescription": "How the function inputs should be interpreted",
+            "outputDescription": "How the function output should be formatted",
+            "constraints": ["constraint 1", "constraint 2"],
+            "examples": [
+              { "input": "arr = [4,5,4,6,5,7,8,6], k = 3", "output": "5 5 6 6 7 7", "explanation": "short explanation" }
+            ],
+            "visibleTestCases": [
+              { "arr": [4,5,4,6,5,7,8,6], "k": 3, "output": "5 5 6 6 7 7" }
+            ],
+            "hiddenTestCases": [
+              { "arr": [2,3,2,4,5,4,6], "k": 4, "output": "3 3 2 5" }
+            ]
+          }
+        }
       ]
     }
   ]
 }
 
-The 4 sections MUST be:
-1. "Introduction & Background" (2 easy questions)
-2. "Technical Skills" (3 medium/hard questions, tailored to candidate's skills)
-3. "Problem Solving & System Design" (2-3 hard questions)
-4. "Behavioral & Cultural Fit" (2-3 easy/medium questions)
+The 5 sections MUST be:
+1. "Introduction & Background" (2 easy questions based SOLELY on their resume and experience)
+2. "Technical Skills" (3 medium/hard questions: Exactly 1 question directly challenging a skill from their resume, and 2 questions testing general core technical concepts for the ${role} role based on the company context provided)
+3. "System Design" (Exactly 1 hard question presenting a realistic, scalable system design scenario relevant to ${company})
+4. "Problem Solving" (Leave this section with an empty questions array — the coding question will be injected from an external dataset)
+5. "Behavioral & Cultural Fit" (2 easy/medium questions assessing soft skills and cultural alignment)
 
-Make questions specific to ${company} and the ${role} role. Tailor technical questions to the candidate's listed skills.`;
+Make questions specific to ${company} and the ${role} role. Tailor technical questions to the candidate's listed skills.
+Use retrieved vector DB question seeds whenever they are available. You may lightly adapt wording for the role and company, but keep the original question intent.
+
+Do NOT generate a coding question — it will be sourced from a curated dataset and injected automatically.`;
 
   try {
     const raw = await askLLM(prompt);
@@ -281,18 +992,31 @@ Make questions specific to ${company} and the ${role} role. Tailor technical que
     }
 
     // Validate and normalize
-    return parsed.sections.map((section) => ({
+    const normalizedSections = await Promise.all(parsed.sections.map(async (section) => ({
       title: String(section.title || "General"),
       description: String(section.description || ""),
       questions: Array.isArray(section.questions)
-        ? section.questions.map((q) => ({
-            question: String(q.question || "Tell me about your experience."),
-            difficulty: ["easy", "medium", "hard"].includes(q.difficulty) ? q.difficulty : "medium",
+        ? await Promise.all(section.questions.map(async (q) => {
+            if (q.type === "coding") {
+              if (preferredCodingQuestion) {
+                return clonePlainObject(preferredCodingQuestion);
+              }
+              return enrichCodingQuestion(q, { role, company });
+            }
+
+            return {
+              question: String(q.question || "Tell me about your experience."),
+              difficulty: normalizeDifficulty(q.difficulty, "medium"),
+              type: "text",
+            };
           }))
         : [],
-    }));
+    })));
+
+    return ensureCodingQuestion(dedupeSections(normalizedSections, fallbackSections), preferredCodingQuestion);
   } catch (_error) {
-    return fallbackSections;
+    console.error("LLM ERROR (generateAllQuestions):", _error);
+    return ensureCodingQuestion(fallbackSections, preferredCodingQuestion);
   }
 };
 
@@ -314,7 +1038,33 @@ export const evaluateAnswer = async ({ question, answer, role, company, conversa
     .map((h) => `${h.role}: ${h.content}`)
     .join("\n");
 
+  let rubricContext = "";
+  let exampleContext = "";
+  try {
+    const [context, examples] = await Promise.all([
+      retrieveCompanyContext({ company, role, query: `${company} ${role} answer evaluation rubric for: ${question}` }),
+      retrieveInterviewContext({
+        role,
+        company,
+        query: `${role} interview answer example for question: ${question}`,
+        limit: 3,
+      }),
+    ]);
+
+    if (context) {
+      rubricContext = `\nIdeal Requirements / Scoring Rubric retrieved from company database:\n${context}\n\n*CRITICAL INSTRUCTION*: You MUST base your evaluation and score strictly on whether the candidate's answer covers the points in this rubric, rather than generic standards.`;
+    }
+
+    if (examples.length > 0) {
+      exampleContext = `\nRelevant high-scoring interview examples:\n${examples.map((item) => item.content).join("\n---\n")}`;
+    }
+  } catch (_error) {
+    // Graceful degradation if RAG is unavailable
+  }
+
   const prompt = `You are an expert interviewer for ${company}, role: ${role}.
+${rubricContext}
+${exampleContext}
 
 Interview context so far:
 ${historyContext}
@@ -331,23 +1081,49 @@ Return strictly valid JSON:
   "strengths": ["strength1", "strength2"],
   "improvements": ["improvement1", "improvement2"],
   "model_answer": "What an ideal answer would include (2-3 sentences)",
-  "should_counter_question": <boolean - true if the answer was vague, incomplete, or you want to probe deeper>,
-  "counter_question": "A follow-up question to probe deeper into their answer (or null if not needed)"
+  "should_counter_question": <boolean - ONLY true if the candidate missed expected areas and you need to ask them about those specific missed areas. False otherwise.>,
+  "counter_question": "A follow-up question addressing the specific expected areas they missed (or null if should_counter_question is false)"
 }
 
-Be encouraging but honest. If the answer is vague or misses key points, set should_counter_question to true and provide a specific follow-up question.`;
+If the candidate's answer touches on most expected areas, set should_counter_question to false and counter_question to null.
+Ask a follow-up ONLY when the answer is clearly unsatisfactory:
+1. it is off-topic or answers a different question, or
+2. it misses the core requirement badly enough that you cannot fairly assess the candidate.
+
+Do not ask a follow-up for acceptable, partially correct, or merely imperfect answers.
+There can be at most one follow-up for the main question.
+If the candidate answer is basically "(Skipped)" or says they do not know, you may ask at most one simple recovery question only if it is genuinely useful.
+If the candidate answer is off-topic, addresses a different question, or clearly avoids the main requirement, set should_counter_question to true.`;
 
   try {
     const raw = await askLLM(prompt);
     const parsed = parseJSONObject(raw, fallback);
+    const normalizedAnswer = String(answer || "").trim().toLowerCase();
+    const skippedAnswer = normalizedAnswer === "(skipped)" || normalizedAnswer.includes("i don't know");
+    const offTopicAnswer = isLikelyOffTopic(question, answer);
+    const answerWordCount = countWords(answer);
+    const normalizedScore = clampScore(parsed.score);
+    const clearlyUnsatisfactory =
+      offTopicAnswer
+      || normalizedScore <= 3
+      || (normalizedScore <= 4 && answerWordCount < 10);
+    const suggestedCounterQuestion =
+      typeof parsed.counter_question === "string" && parsed.counter_question.trim().length > 0
+        ? parsed.counter_question
+        : `Please answer the original question directly and cover the main missing areas: ${question}`;
+    const allowCounterQuestion =
+      (Boolean(parsed.should_counter_question) || offTopicAnswer)
+      && clearlyUnsatisfactory
+      && !skippedAnswer;
+
     return {
       feedback: typeof parsed.feedback === "string" ? parsed.feedback : fallback.feedback,
-      score: clampScore(parsed.score),
+      score: normalizedScore,
       strengths: Array.isArray(parsed.strengths) ? parsed.strengths.map(String) : fallback.strengths,
       improvements: Array.isArray(parsed.improvements) ? parsed.improvements.map(String) : fallback.improvements,
       model_answer: typeof parsed.model_answer === "string" ? parsed.model_answer : fallback.model_answer,
-      should_counter_question: Boolean(parsed.should_counter_question),
-      counter_question: typeof parsed.counter_question === "string" ? parsed.counter_question : null,
+      should_counter_question: allowCounterQuestion,
+      counter_question: allowCounterQuestion ? suggestedCounterQuestion : null,
     };
   } catch (_error) {
     return fallback;
@@ -391,9 +1167,17 @@ Evaluate the follow-up answer. Return JSON:
 
 export const resolveDoubt = async ({ doubt, currentQuestion, role, company, conversationHistory }) => {
   const fallback = {
-    response: "That's a great question. Let me clarify — focus on explaining your thought process and approach. There's no single right answer; we're looking for how you think through problems.",
+    response: `For this current question, explain the exact requirement first, then your approach in 2-3 clear steps. Mention one trade-off or edge case relevant to this question. If you want, I can also give a broader ${role} interview tip.`,
     hint: null,
   };
+
+  const doubtText = String(doubt || "").toLowerCase();
+  const explicitGeneralIntent = /\b(general|overall|in general|generally|skills required|what skills|interview tips|preparation|prepare|resume|career|role expectations|company culture)\b/.test(doubtText);
+  const likelyAmbiguousDoubt = !explicitGeneralIntent && (
+    doubtText.trim().split(/\s+/).length <= 6
+    || /\b(this|that|it|can you explain|not clear|confused|what do you mean|which one|how)\b/.test(doubtText)
+  );
+  const focusMode = explicitGeneralIntent ? "general_allowed" : "question_focused";
 
   const historyContext = (conversationHistory || [])
     .slice(-6)
@@ -409,24 +1193,67 @@ ${historyContext}
 
 The candidate has a doubt/clarification request: "${doubt}"
 
-Respond helpfully WITHOUT giving away the answer. You can:
-- Clarify what the question is asking
-- Give a hint about the approach (without the full solution)
-- Explain what we're looking for in the answer
-- Rephrase the question if they're confused
+Focus mode: ${focusMode}
+Ambiguity signal: ${likelyAmbiguousDoubt ? "high" : "low"}
+
+First, identify the user's intent from the doubt text.
+- Default behavior: Treat the doubt as being about the CURRENT QUESTION, even if the user does not mention the question explicitly.
+- If the doubt is ambiguous, anchor your reply to the current question's requirement and expected approach.
+- Only switch to general role/company guidance if the user EXPLICITLY asks a general doubt.
+- If they ask for full direct solution, avoid giving the full answer and provide guidance/hint instead.
+
+If you are not sure what they mean:
+- Start with one short confirmation question (for example: "Quick check: do you mean X or Y?").
+- Then provide a tentative helpful direction tied to the current question.
+
+Important behavior requirements:
+- Do NOT just restate the interview question unless they explicitly asked for rephrasing.
+- Do NOT give generic filler. Address the exact words of the doubt.
+- In question-focused mode, include at least one sentence tied to the current question context.
+- Keep response practical and specific to ${role} at ${company}.
+- Keep it short and simple.
+- Response should be concise but complete: 3-4 short sentences, ideally 60-100 words.
 
 Return JSON:
 {
-  "response": "Your helpful response to their doubt (2-4 sentences, encouraging tone)",
-  "hint": "Optional brief hint about approaching the answer (or null if not needed)"
+  "response": "Helpful concise answer to their exact doubt (3-4 short sentences, 60-100 words)",
+  "hint": "Optional brief hint about approaching the answer (or null if not needed)",
+  "needs_confirmation": "boolean; true when intent is unclear",
+  "confirmation_question": "short clarification question when needs_confirmation=true, else null"
 }`;
 
   try {
     const raw = await askLLM(prompt);
     const parsed = parseJSONObject(raw, fallback);
+    const compact = (text) => {
+      const cleaned = String(text || "").replace(/\s+/g, " ").trim();
+      const shortParagraph = cleaned
+        .split(/(?<=[.!?])\s+/)
+        .slice(0, 4)
+        .join(" ");
+      return shortParagraph.length > 420
+        ? shortParagraph.slice(0, 417).trimEnd() + "..."
+        : shortParagraph;
+    };
+
     return {
-      response: typeof parsed.response === "string" ? parsed.response : fallback.response,
-      hint: typeof parsed.hint === "string" ? parsed.hint : null,
+      response: (() => {
+        const baseResponse = compact(typeof parsed.response === "string" ? parsed.response : fallback.response);
+        const needsConfirmation = Boolean(parsed.needs_confirmation) || likelyAmbiguousDoubt;
+        const confirmQ = typeof parsed.confirmation_question === "string"
+          ? compact(parsed.confirmation_question)
+          : null;
+
+        if (!needsConfirmation) return baseResponse;
+
+        const promptQ = confirmQ || "Quick check: are you asking about this current question or a general interview tip?";
+        if (baseResponse.toLowerCase().includes("quick check:") || baseResponse.includes("?")) {
+          return baseResponse;
+        }
+
+        return `${promptQ} ${baseResponse}`;
+      })(),
+      hint: typeof parsed.hint === "string" ? compact(parsed.hint) : null,
     };
   } catch (_error) {
     return fallback;
@@ -511,6 +1338,77 @@ Return strictly valid JSON:
               ? s.level
               : "intermediate",
             score: clampScore(s.score),
+          }))
+        : [],
+    };
+  } catch (_error) {
+    return fallback;
+  }
+};
+
+// ─── Clean Question Text for Display ────────────────────────
+
+/**
+ * Send raw LeetCode question text to LLM to get a clean structured version
+ * for frontend display. Extracts description, examples, constraints, and
+ * test case inputs/outputs from the raw markdown.
+ */
+export const cleanQuestionForDisplay = async (rawQuestion, title = "") => {
+  const fallback = {
+    title: title || "Coding Challenge",
+    description: rawQuestion,
+    examples: [],
+    constraints: [],
+    testCases: [],
+  };
+
+  const prompt = `You are a LeetCode question formatter. Given raw question markdown, extract and return ONLY valid JSON with this structure:
+
+{
+  "title": "the problem title (e.g. Two Sum)",
+  "description": "clean problem description paragraph(s) ONLY — no examples, no constraints, no extra formatting artifacts. Keep it concise and readable.",
+  "examples": [
+    {
+      "input": "exact input from the example e.g. nums = [2,7,11,15], target = 9",
+      "output": "exact output e.g. [0,1]",
+      "explanation": "explanation if given, or empty string"
+    }
+  ],
+  "constraints": ["constraint 1", "constraint 2"],
+  "testCases": [
+    { "input": "the input as a JSON object matching function params e.g. {\\"nums\\": [2,7,11,15], \\"target\\": 9}", "expectedOutput": "expected output value e.g. [0,1]" }
+  ]
+}
+
+Rules:
+- "description" must NOT contain examples or constraints — only the problem statement.
+- "examples" must list ALL examples from the text with their exact Input, Output, and Explanation.
+- "testCases" must extract the same inputs/outputs as structured JSON objects suitable for programmatic use.
+- "constraints" must list all constraints like "1 <= nums.length <= 10^4".
+- Remove all formatting artifacts, escaped quotes, zero-width spaces, HTML tags.
+- Return ONLY the JSON object, nothing else.
+
+Raw question:
+${rawQuestion}`;
+
+  try {
+    const raw = await askLLM(prompt);
+    const parsed = parseJSONObject(raw, fallback);
+    return {
+      title: typeof parsed.title === "string" && parsed.title ? parsed.title : fallback.title,
+      description: typeof parsed.description === "string" && parsed.description ? parsed.description : fallback.description,
+      examples: Array.isArray(parsed.examples)
+        ? parsed.examples.map((ex) => ({
+            input: String(ex?.input || ""),
+            output: String(ex?.output || ""),
+            explanation: String(ex?.explanation || ""),
+          }))
+        : [],
+      constraints: Array.isArray(parsed.constraints) ? parsed.constraints.map(String) : [],
+      testCases: Array.isArray(parsed.testCases)
+        ? parsed.testCases.map((tc) => ({
+            input: typeof tc?.input === "string" ? tc.input : JSON.stringify(tc?.input || {}),
+            expectedOutput: typeof tc?.expectedOutput === "string" ? tc.expectedOutput : JSON.stringify(tc?.expectedOutput || ""),
           }))
         : [],
     };

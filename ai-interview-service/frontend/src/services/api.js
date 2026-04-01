@@ -29,17 +29,34 @@ export const getCurrentQuestion = (sessionId) =>
 export const submitAnswer = (sessionId, answer) =>
   apiClient.post('/interviews/' + sessionId + '/answer', { answer })
 
-export const submitCounterAnswer = (sessionId, answer, questionNumber) =>
-  apiClient.post('/interviews/' + sessionId + '/counter-answer', { answer, question_number: questionNumber })
+export const submitCounterAnswer = (sessionId, answer, questionNumber, counterIndex, counterQuestion) =>
+  apiClient.post('/interviews/' + sessionId + '/counter-answer', {
+    answer,
+    question_number: questionNumber,
+    counter_index: counterIndex,
+    counter_question: counterQuestion,
+  })
 
 export const moveToNext = (sessionId) =>
   apiClient.post('/interviews/' + sessionId + '/next')
 
-export const askDoubt = (sessionId, doubt) =>
-  apiClient.post('/interviews/' + sessionId + '/doubt', { doubt })
+export const askDoubt = (sessionId, doubt, currentPrompt) =>
+  apiClient.post('/interviews/' + sessionId + '/doubt', { doubt, currentPrompt })
 
 export const getReport = (sessionId) =>
   apiClient.get('/interviews/' + sessionId + '/report')
 
 export const endInterview = (sessionId) =>
   apiClient.post('/interviews/' + sessionId + '/end', {})
+
+export const runCode = (language, code, testCases, mode = 'run') =>
+  apiClient.post('/interviews/code/run', { language, code, testCases, mode })
+
+export const getRagDataset = (collection = 'problems', limit = 100) =>
+  apiClient.get(`/interviews/dataset/questions?limit=${limit}`)
+
+export const verifyRagQuestion = (hit, role = 'Software Engineer', company = 'Tech Company') =>
+  apiClient.post('/interviews/rag/verify', { hit, role, company })
+
+export const cleanQuestionText = (question, title = '') =>
+  apiClient.post('/interviews/clean-question', { question, title })

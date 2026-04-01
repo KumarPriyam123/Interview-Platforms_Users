@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { startInterview } from '../services/api'
 import '../styles/SetupPage.css'
 
@@ -79,6 +79,9 @@ function SetupPage() {
           <div className="setup-icon">🎯</div>
           <h1>AI Mock Interview</h1>
           <p>Upload your resume, enter the company and role, and start a personalized AI-powered mock interview.</p>
+          <div style={{ marginTop: '16px' }}>
+            <Link to="/dataset" style={{ color: '#60a5fa', textDecoration: 'underline', fontSize: '14px', fontWeight: 'bold' }}>View Dataset</Link>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="setup-form">

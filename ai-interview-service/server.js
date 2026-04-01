@@ -1,10 +1,8 @@
-import { config } from "dotenv";
+import "dotenv/config";
 
 import { connectDB } from "./src/config/db.js";
 import { initRAG } from "./src/services/rag.service.js";
 import { createApp } from "./src/app.js";
-
-config();
 
 const PORT = Number(process.env.PORT || 8000);
 
@@ -19,7 +17,7 @@ const start = async () => {
     // Don't exit — let the server start so you can debug
   }
 
-  // Initialize RAG vector store (ChromaDB)
+  // Initialize RAG vector store (Qdrant)
   try {
     await initRAG();
     console.log("RAG vector store initialized");

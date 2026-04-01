@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { getReport } from '../services/api'
 import '../styles/ReportPage.css'
 
@@ -22,11 +22,11 @@ function ReportPage() {
         setLoading(false)
       }
     }
+
     fetchReport()
   }, [sessionId])
 
   const getScoreClass = (score) => score >= 8 ? 'high' : score >= 5 ? 'mid' : 'low'
-
   const circumference = 2 * Math.PI * 60
 
   if (loading) {
@@ -47,10 +47,13 @@ function ReportPage() {
     return (
       <div className="report-page">
         <div className="report-container">
-          <div className="report-header">
-            <h1>Report</h1>
+          <div className="report-hero">
+            <div>
+              <div className="report-eyebrow">Interview Review</div>
+              <h1>Report unavailable</h1>
+              <p>{error}</p>
+            </div>
           </div>
-          <div className="error-msg" style={{ maxWidth: 500, margin: '2rem auto' }}>{error}</div>
           <button className="back-home-btn" onClick={() => navigate('/setup')}>Start New Interview</button>
         </div>
       </div>
@@ -62,40 +65,44 @@ function ReportPage() {
   const overallScore = report.overall_score || 0
   const dashOffset = circumference - (overallScore / 10) * circumference
   const scoreClass = getScoreClass(overallScore)
+  const answeredCount = (report.questions || []).filter((q) => q.answer).length
 
   return (
     <div className="report-page">
       <div className="report-container">
-        <div className="report-header">
-          <h1>Interview Report</h1>
-          <p>Your detailed performance analysis</p>
-        </div>
-
-        {/* Overall Score */}
-        <div className="score-overview">
-          <div className="score-circle-wrapper">
-            <svg width="150" height="150" viewBox="0 0 150 150">
-              <circle className="score-circle-bg" cx="75" cy="75" r="60" />
-              <circle
-                className={'score-circle-fill ' + scoreClass}
-                cx="75" cy="75" r="60"
-                strokeDasharray={circumference}
-                strokeDashoffset={dashOffset}
-                transform="rotate(-90 75 75)"
-              />
-            </svg>
-            <div className="score-circle-text">
-              <span className={'score-number ' + scoreClass}>{overallScore}</span>
-              <span className="score-label-txt">out of 10</span>
+        <section className="report-hero">
+          <div className="report-hero-copy">
+            <div className="report-eyebrow">Interview Review</div>
+            <h1>Performance Summary</h1>
+            <p>{report.summary}</p>
+            <div className="report-hero-chips">
+              <span className="report-chip">{answeredCount} answered</span>
+              <span className="report-chip">{report.section_scores?.length || 0} sections reviewed</span>
+              <span className={'report-chip score ' + scoreClass}>Overall {overallScore}/10</span>
             </div>
           </div>
-          <div className="score-summary">
-            <p>{report.summary}</p>
-          </div>
-        </div>
 
-        {/* Strengths & Weaknesses */}
-        <div className="report-grid">
+          <div className="score-overview">
+            <div className="score-circle-wrapper">
+              <svg width="150" height="150" viewBox="0 0 150 150">
+                <circle className="score-circle-bg" cx="75" cy="75" r="60" />
+                <circle
+                  className={'score-circle-fill ' + scoreClass}
+                  cx="75" cy="75" r="60"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={dashOffset}
+                  transform="rotate(-90 75 75)"
+                />
+              </svg>
+              <div className="score-circle-text">
+                <span className={'score-number ' + scoreClass}>{overallScore}</span>
+                <span className="score-label-txt">out of 10</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="report-grid">
           {report.strengths?.length > 0 && (
             <div className="report-card strengths">
               <h3>Strengths</h3>
@@ -104,30 +111,32 @@ function ReportPage() {
               </ul>
             </div>
           )}
+
           {report.weaknesses?.length > 0 && (
             <div className="report-card weaknesses">
-              <h3>Weaknesses</h3>
+              <h3>Areas To Improve</h3>
               <ul className="report-list">
                 {report.weaknesses.map((w, i) => <li key={i}>{w}</li>)}
               </ul>
             </div>
           )}
-        </div>
+        </section>
 
-        {/* Recommendations */}
         {report.recommendations?.length > 0 && (
-          <div className="report-card recommendations" style={{ marginBottom: '2rem' }}>
-            <h3>Recommendations</h3>
+          <section className="report-card recommendations report-section">
+            <h3>Recommended Next Steps</h3>
             <ul className="report-list">
               {report.recommendations.map((r, i) => <li key={i}>{r}</li>)}
             </ul>
-          </div>
+          </section>
         )}
 
-        {/* Section Scores */}
         {report.section_scores?.length > 0 && (
-          <div className="section-scores">
-            <h3>Section Performance</h3>
+          <section className="section-scores report-section">
+            <div className="section-heading">
+              <h3>Section Performance</h3>
+              <p>How you performed across each stage of the interview.</p>
+            </div>
             {report.section_scores.map((sec, i) => {
               const sc = getScoreClass(sec.score)
               return (
@@ -143,13 +152,15 @@ function ReportPage() {
                 </div>
               )
             })}
-          </div>
+          </section>
         )}
 
-        {/* Skill Assessment */}
         {report.skill_assessment?.length > 0 && (
-          <div className="skill-assessment">
-            <h3>Skill Assessment</h3>
+          <section className="skill-assessment report-section">
+            <div className="section-heading">
+              <h3>Skill Assessment</h3>
+              <p>Your current level across the main skills detected during the interview.</p>
+            </div>
             <div className="skills-grid">
               {report.skill_assessment.map((sk, i) => (
                 <div key={i} className="skill-item">
@@ -158,56 +169,73 @@ function ReportPage() {
                 </div>
               ))}
             </div>
-          </div>
+          </section>
         )}
 
-        {/* Question by Question */}
         {report.questions?.length > 0 && (
-          <div className="questions-breakdown">
-            <h3>Question-by-Question Review</h3>
+          <section className="questions-breakdown report-section">
+            <div className="section-heading">
+              <h3>Question Review</h3>
+              <p>A cleaner breakdown of your answers, follow-ups, and ideal direction.</p>
+            </div>
+
             {report.questions.map((q, i) => {
               const sc = getScoreClass(q.score)
               return (
-                <div key={i} className="question-review">
+                <article key={i} className="question-review">
                   <div className="question-review-header">
-                    <div className="question-review-q">
-                      <span style={{ color: 'var(--text-muted)', marginRight: '0.5rem' }}>Q{i + 1}.</span>
-                      {q.question}
+                    <div>
+                      <div className="question-review-index">Question {i + 1}</div>
+                      <div className="question-review-q">{q.question}</div>
+                      <div className="question-review-meta">
+                        {q.section_title && <span className="question-meta-chip">{q.section_title}</span>}
+                        {q.difficulty && <span className={'question-meta-chip ' + q.difficulty}>{q.difficulty}</span>}
+                      </div>
                     </div>
                     <span className={'question-review-score score-badge ' + sc}>
                       {q.score !== null ? q.score + '/10' : 'N/A'}
                     </span>
                   </div>
-                  {q.answer && (
-                    <div className="question-review-answer">
-                      <div className="question-review-answer-label">Your Answer</div>
-                      {q.answer}
-                    </div>
-                  )}
-                  {q.feedback && (
-                    <div className="question-review-feedback">{q.feedback}</div>
-                  )}
+
+                  <div className="review-panels">
+                    {q.answer && (
+                      <div className="review-panel">
+                        <div className="question-review-answer-label">Your Answer</div>
+                        <div className="question-review-answer">{q.answer}</div>
+                      </div>
+                    )}
+
+                    {q.feedback && (
+                      <div className="review-panel feedback-panel">
+                        <div className="question-review-answer-label">Feedback</div>
+                        <div className="question-review-feedback">{q.feedback}</div>
+                      </div>
+                    )}
+                  </div>
+
                   {q.model_answer && (
-                    <div className="model-answer" style={{ marginTop: '0.5rem' }}>
+                    <div className="model-answer review-model-answer">
                       <div className="model-answer-label">Ideal Approach</div>
                       {q.model_answer}
                     </div>
                   )}
+
                   {q.counter_questions?.length > 0 && (
-                    <div style={{ marginTop: '0.5rem', paddingLeft: '1rem', borderLeft: '2px solid rgba(139,92,246,0.3)' }}>
+                    <div className="followup-list">
                       {q.counter_questions.map((cq, ci) => (
-                        <div key={ci} style={{ marginBottom: '0.5rem', fontSize: '0.85rem' }}>
-                          <div style={{ color: 'var(--accent-400)', fontWeight: 500 }}>Follow-up: {cq.question}</div>
-                          {cq.answer && <div style={{ color: 'var(--text-secondary)', marginTop: '0.25rem' }}>Your answer: {cq.answer}</div>}
-                          {cq.feedback && <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', marginTop: '0.15rem' }}>{cq.feedback}</div>}
+                        <div key={ci} className="followup-card">
+                          <div className="followup-title">Follow-up {ci + 1}</div>
+                          <div className="followup-question">{cq.question}</div>
+                          {cq.answer && <div className="followup-answer">Your answer: {cq.answer}</div>}
+                          {cq.feedback && <div className="followup-feedback">{cq.feedback}</div>}
                         </div>
                       ))}
                     </div>
                   )}
-                </div>
+                </article>
               )
             })}
-          </div>
+          </section>
         )}
 
         <button className="back-home-btn" onClick={() => navigate('/setup')}>

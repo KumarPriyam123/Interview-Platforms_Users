@@ -5,6 +5,7 @@ import {
   generateAllQuestions,
   generateReport,
   resolveDoubt,
+  cleanQuestionForDisplay,
 } from "../services/llm.service.js";
 import {
   addAllQuestions,
@@ -23,8 +24,41 @@ import {
   updateQuestionIndex,
   updateSessionSections,
 } from "../services/interview.service.js";
+import { runCode } from "../services/codeExecution.service.js";
 import { storeInterviewData } from "../services/rag.service.js";
 import { extractTextFromBuffer } from "../utils/resumeExtractor.js";
+
+const resolveActiveCounterIndex = (question, requestedIndex, requestedQuestionText) => {
+  if (requestedQuestionText) {
+    for (let index = question.counterQuestions.length - 1; index >= 0; index--) {
+      const counterQuestion = question.counterQuestions[index];
+      if (
+        counterQuestion?.question === requestedQuestionText
+        && !counterQuestion?.userAnswer
+      ) {
+        return index;
+      }
+    }
+
+    for (let index = question.counterQuestions.length - 1; index >= 0; index--) {
+      if (question.counterQuestions[index]?.question === requestedQuestionText) {
+        return index;
+      }
+    }
+  }
+
+  if (Number.isInteger(requestedIndex) && requestedIndex >= 0 && requestedIndex < question.counterQuestions.length) {
+    return requestedIndex;
+  }
+
+  for (let index = question.counterQuestions.length - 1; index >= 0; index--) {
+    if (!question.counterQuestions[index]?.userAnswer) {
+      return index;
+    }
+  }
+
+  return question.counterQuestions.length - 1;
+};
 
 // ─── Start Interview ────────────────────────────────────────
 // Uploads resume, generates ALL questions in sections, returns session
@@ -161,6 +195,8 @@ export const getQuestion = async (req, res, next) => {
       section_index: question.sectionIndex,
       section_title: question.sectionTitle,
       difficulty: question.difficulty,
+      type: question.type || "text",
+      coding: question.coding || null,
       total_questions: session.totalQuestions,
       current_index: currentIndex,
       status: "active",
@@ -234,18 +270,27 @@ export const answerQuestion = async (req, res, next) => {
 
     // If counter-question is needed, add it
     if (evaluation.should_counter_question && evaluation.counter_question) {
-      await addCounterQuestion(sessionId, currentIndex, evaluation.counter_question);
+      const updatedQuestion = await addCounterQuestion(sessionId, currentIndex, evaluation.counter_question);
       await addToConversationHistory(sessionId, {
         role: "assistant",
         content: evaluation.counter_question,
         type: "counter_question",
+      });
+
+      return res.json({
+        ...evaluation,
+        question_number: currentIndex,
+        has_counter_question: true,
+        counter_question: evaluation.counter_question,
+        counter_index: (updatedQuestion?.counterQuestions?.length || 1) - 1,
       });
     }
 
     return res.json({
       ...evaluation,
       question_number: currentIndex,
-      has_counter_question: evaluation.should_counter_question && Boolean(evaluation.counter_question),
+      has_counter_question: false,
+      counter_index: null,
     });
   } catch (error) {
     return next(error);
@@ -257,7 +302,7 @@ export const answerQuestion = async (req, res, next) => {
 export const answerCounterQuestion = async (req, res, next) => {
   try {
     const { sessionId } = req.params;
-    const { answer, question_number } = req.body;
+    const { answer, question_number, counter_index, counter_question } = req.body;
 
     if (!answer || !answer.trim()) {
       return res.status(400).json({ detail: "Answer is required" });
@@ -274,7 +319,12 @@ export const answerCounterQuestion = async (req, res, next) => {
       return res.status(404).json({ detail: "Question not found" });
     }
 
-    const lastCounter = question.counterQuestions[question.counterQuestions.length - 1];
+    const activeCounterIndex = resolveActiveCounterIndex(
+      question,
+      Number(counter_index),
+      typeof counter_question === "string" ? counter_question : ""
+    );
+    const lastCounter = question.counterQuestions[activeCounterIndex];
     if (!lastCounter) {
       return res.status(400).json({ detail: "No counter question to answer" });
     }
@@ -297,8 +347,16 @@ export const answerCounterQuestion = async (req, res, next) => {
     });
 
     // Save counter answer
-    const counterIndex = question.counterQuestions.length - 1;
-    await submitCounterAnswer(sessionId, qNum, counterIndex, answer, evaluation.feedback);
+    const savedCounterAnswer = await submitCounterAnswer(
+      sessionId,
+      qNum,
+      activeCounterIndex,
+      answer,
+      evaluation.feedback
+    );
+    if (!savedCounterAnswer) {
+      return res.status(400).json({ detail: "Unable to save follow-up answer" });
+    }
 
     // Adjust score if needed
     if (evaluation.score_adjustment !== 0) {
@@ -324,6 +382,9 @@ export const answerCounterQuestion = async (req, res, next) => {
     return res.json({
       feedback: evaluation.feedback,
       score_adjustment: evaluation.score_adjustment,
+      has_counter_question: false,
+      counter_question: null,
+      counter_index: null,
     });
   } catch (error) {
     return next(error);
@@ -366,6 +427,8 @@ export const nextQuestion = async (req, res, next) => {
       section_index: nextQ.sectionIndex,
       section_title: nextQ.sectionTitle,
       difficulty: nextQ.difficulty,
+      type: nextQ.type || "text",
+      coding: nextQ.coding || null,
       total_questions: session.totalQuestions,
       current_index: nextIndex,
       status: "active",
@@ -380,7 +443,7 @@ export const nextQuestion = async (req, res, next) => {
 export const askDoubt = async (req, res, next) => {
   try {
     const { sessionId } = req.params;
-    const { doubt } = req.body;
+    const { doubt, currentPrompt } = req.body;
 
     if (!doubt || !doubt.trim()) {
       return res.status(400).json({ detail: "Doubt text is required" });
@@ -404,7 +467,7 @@ export const askDoubt = async (req, res, next) => {
     // Resolve doubt
     const response = await resolveDoubt({
       doubt,
-      currentQuestion: currentQuestion?.questionText || "",
+      currentQuestion: currentPrompt?.trim() || currentQuestion?.questionText || "",
       role: session.role,
       company: session.company,
       conversationHistory,
@@ -555,6 +618,44 @@ export const stopInterview = async (req, res, next) => {
 
     return res.json({ status: "ended" });
   } catch (error) {
+    return next(error);
+  }
+};
+
+export const executeCodingAnswer = async (req, res, next) => {
+  try {
+    const { language, code, testCases, mode } = req.body;
+
+    if (!code || !String(code).trim()) {
+      return res.status(400).json({ detail: "Code is required" });
+    }
+
+    const result = await runCode({
+      language: String(language || "javascript").toLowerCase(),
+      code: String(code),
+      testCases,
+      mode: String(mode || "run").toLowerCase(),
+    });
+
+    return res.json(result);
+  } catch (error) {
+    error.statusCode = 502;
+    error.message = error.message || "Unable to run code right now. Please try again in a moment.";
+    return next(error);
+  }
+};
+
+export const cleanQuestion = async (req, res, next) => {
+  try {
+    const { question, title } = req.body;
+    if (!question || !String(question).trim()) {
+      return res.status(400).json({ detail: "question is required" });
+    }
+    const cleaned = await cleanQuestionForDisplay(String(question), String(title || ""));
+    return res.json(cleaned);
+  } catch (error) {
+    error.statusCode = 502;
+    error.message = error.message || "Failed to clean question text.";
     return next(error);
   }
 };

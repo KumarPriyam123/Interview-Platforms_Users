@@ -61,6 +61,8 @@ export const addAllQuestions = async (sessionId, sections) => {
         sectionIndex,
         sectionTitle: section.title,
         difficulty: q.difficulty || "medium",
+        type: q.type || "text",
+        coding: q.coding || undefined,
       });
       questionNumber++;
     }
