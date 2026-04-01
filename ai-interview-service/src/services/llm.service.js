@@ -286,69 +286,6 @@ const createExamplesFromCases = (visibleTestCases = []) =>
     };
   });
 
-const CODING_QUESTION_BANK = [
-  createCodingQuestion({
-    question: "A stream of sensor readings arrives one by one. For every window of size k, output the first reading that appears exactly once in that window. If no such reading exists, output -1. Return the answer for every valid window.",
-    cppSignature: "vector<int> solve(vector<int>& arr, int k)",
-    inputDescription: "arr is the list of sensor readings and k is the sliding window size.",
-    outputDescription: "Return a vector where each element is the first unique reading in that window, or -1 if none exists.",
-    constraints: ["1 <= arr.length <= 2 * 10^5", "1 <= k <= arr.length", "Reading values may repeat and can be large integers."],
-    examples: [
-      { input: 'arr = [4,5,4,6,5,7,8,6], k = 3', output: '5 5 6 6 7 7', explanation: "Each output entry is the first value in the current window whose frequency is exactly one." },
-      { input: 'arr = [1,1,1,1,1], k = 3', output: '-1 -1 -1', explanation: "Every window contains only duplicates, so there is no unique value." },
-    ],
-    visibleTestCases: [
-      { arr: [4, 5, 4, 6, 5, 7, 8, 6], k: 3, output: "5 5 6 6 7 7" },
-      { arr: [1, 1, 1, 1, 1], k: 3, output: "-1 -1 -1" },
-    ],
-    hiddenTestCases: [
-      { arr: [2, 3, 2, 4, 5, 4, 6], k: 4, output: "3 3 2 5" , hidden: true},
-      { arr: [9], k: 1, output: "9", hidden: true },
-    ],
-  }),
-  createCodingQuestion({
-    question: "Given a dependency graph of services where each service points to the services it depends on, return whether the deployment order is valid. If it is valid, return one topological order; otherwise return one cycle that proves the graph is invalid.",
-    cppSignature: "vector<int> solve(int n, vector<vector<int>>& dependencies)",
-    inputDescription: "n is the number of services labeled 0 to n-1. dependencies contains pairs [service, dependency].",
-    outputDescription: "Return a vector containing a valid deployment order, or a cycle path if a cycle exists.",
-    constraints: ["1 <= n <= 10^5", "0 <= dependencies.length <= 2 * 10^5", "The graph may be disconnected."],
-    examples: [
-      { input: 'n = 4, dependencies = [[1,0],[2,0],[3,1],[3,2]]', output: '0 1 2 3', explanation: "Any valid topological ordering is acceptable." },
-      { input: 'n = 3, dependencies = [[0,1],[1,2],[2,0]]', output: '0 1 2 0', explanation: "A cycle path is returned when deployment is impossible." },
-    ],
-    visibleTestCases: [
-      { n: 4, dependencies: [[1, 0], [2, 0], [3, 1], [3, 2]], output: "0 1 2 3" },
-      { n: 3, dependencies: [[0, 1], [1, 2], [2, 0]], output: "0 1 2 0" },
-    ],
-    hiddenTestCases: [
-      { n: 5, dependencies: [[1, 0], [2, 1], [3, 1], [4, 2]], output: "0 1 2 3 4", hidden: true },
-      { n: 2, dependencies: [[0, 1], [1, 0]], output: "0 1 0", hidden: true },
-    ],
-  }),
-  createCodingQuestion({
-    question: "Given an array of daily prices, choose at most two non-overlapping buy/sell transactions to maximize profit. Return the profit achieved for each day range as [buy1, sell1, buy2, sell2, totalProfit], using -1 for the second pair if only one transaction is used.",
-    cppSignature: "vector<int> solve(vector<int>& prices)",
-    inputDescription: "prices[i] is the stock price on day i.",
-    outputDescription: "Return five integers describing the chosen day ranges and the total profit.",
-    constraints: ["1 <= prices.length <= 10^5", "0 <= prices[i] <= 10^5"],
-    examples: [
-      { input: 'prices = [3,3,5,0,0,3,1,4]', output: '0 2 3 7 6', explanation: "Buy on day 0 sell day 2, then buy day 3 sell day 7 for total profit 6." },
-      { input: 'prices = [7,6,4,3,1]', output: '-1 -1 -1 -1 0', explanation: "No profitable trade exists." },
-    ],
-    visibleTestCases: [
-      { prices: [3, 3, 5, 0, 0, 3, 1, 4], output: "0 2 3 7 6" },
-      { prices: [7, 6, 4, 3, 1], output: "-1 -1 -1 -1 0" },
-    ],
-    hiddenTestCases: [
-      { prices: [1, 2, 3, 4, 5], output: "0 4 -1 -1 4", hidden: true },
-      { prices: [2, 1, 2, 0, 1], output: "1 2 3 4 2", hidden: true },
-    ],
-  }),
-];
-
-const pickRandomCodingQuestion = () =>
-  clonePlainObject(CODING_QUESTION_BANK[Math.floor(Math.random() * CODING_QUESTION_BANK.length)]);
-
 const normalizeCodingSource = (source = null) => {
   if (!source || typeof source !== "object") return null;
   return {
@@ -365,7 +302,7 @@ const normalizeCodingSource = (source = null) => {
 };
 
 const normalizeCodingPayload = (coding, fallbackQuestion, questionText = "") => {
-  const fallback = fallbackQuestion?.coding || pickRandomCodingQuestion().coding;
+  const fallback = fallbackQuestion?.coding || createGenericCodingPayload(questionText);
   const normalizeCase = (testCase) => ({
     ...testCase,
     output: String(testCase?.output ?? ""),
@@ -405,11 +342,11 @@ const normalizeCodingPayload = (coding, fallbackQuestion, questionText = "") => 
   };
 };
 
-const normalizeCodingQuestion = (question, fallbackQuestion = pickRandomCodingQuestion()) => ({
-  question: String(question?.question || fallbackQuestion.question),
-  difficulty: normalizeDifficulty(question?.difficulty, fallbackQuestion.difficulty),
+const normalizeCodingQuestion = (question, fallbackQuestion = null) => ({
+  question: String(question?.question || (fallbackQuestion?.question || "Solve the given problem.")),
+  difficulty: normalizeDifficulty(question?.difficulty, fallbackQuestion?.difficulty || "hard"),
   type: "coding",
-  coding: normalizeCodingPayload(question?.coding, fallbackQuestion, String(question?.question || fallbackQuestion.question)),
+  coding: normalizeCodingPayload(question?.coding, fallbackQuestion, String(question?.question || "")),
 });
 
 const createGenericCodingPayload = (questionText = "") => {
@@ -575,10 +512,9 @@ Rules:
 
 const enrichCodingQuestion = async (question, { role, company }) => {
   const questionText = String(question?.question || "").trim();
-  const fallbackQuestion = pickRandomCodingQuestion();
 
   if (!questionText) {
-    return fallbackQuestion;
+    throw new Error("enrichCodingQuestion: no question text provided");
   }
 
   const prompt = `You are designing coding-round metadata for this EXACT problem statement:
@@ -621,7 +557,7 @@ Rules:
       difficulty: ["easy", "medium", "hard"].includes(question?.difficulty) ? question.difficulty : "hard",
       type: "coding",
       coding: {
-        ...normalizeCodingPayload(parsed, fallbackQuestion, questionText),
+        ...normalizeCodingPayload(parsed, null, questionText),
       },
     };
   } catch (_error) {
@@ -642,9 +578,13 @@ const ensureCodingQuestion = (sections = [], preferredCodingQuestion = null) =>
     const normalizedQuestions = questions.map((question) =>
       question.type === "coding" ? normalizeCodingQuestion(question) : question
     );
+    const existingCoding = normalizedQuestions.find((question) => question.type === "coding");
     const chosenCodingQuestion = preferredCodingQuestion
       ? clonePlainObject(preferredCodingQuestion)
-      : (normalizedQuestions.find((question) => question.type === "coding") || pickRandomCodingQuestion());
+      : existingCoding;
+
+    if (!chosenCodingQuestion) return section;
+
     const nonCodingQuestions = normalizedQuestions.filter((question) => question.type !== "coding");
 
     return {
@@ -653,44 +593,17 @@ const ensureCodingQuestion = (sections = [], preferredCodingQuestion = null) =>
     };
   });
 
-const dedupeSections = (sections = [], fallbackSections = []) => {
+const dedupeSections = (sections = []) => {
   const seen = new Set();
-  const normalizedSections = sections.map((section) => {
+  return sections.map((section) => {
     const uniqueQuestions = (Array.isArray(section.questions) ? section.questions : []).filter((question) => {
-      const normalized = normalizeQuestionText(question.question);
+      const normalized = normalizeQuestionText(question.question || "");
       if (!normalized || seen.has(normalized)) return false;
       seen.add(normalized);
       return true;
     });
-
-    return {
-      ...section,
-      questions: uniqueQuestions,
-    };
-  }).filter((section) => section.questions.length > 0);
-
-  if (normalizedSections.length >= 5) return normalizedSections;
-
-  for (const fallbackSection of fallbackSections) {
-    const existing = normalizedSections.find((section) => section.title === fallbackSection.title);
-    const fallbackQuestions = fallbackSection.questions.filter((question) => {
-      const normalized = normalizeQuestionText(question.question);
-      if (!normalized || seen.has(normalized)) return false;
-      seen.add(normalized);
-      return true;
-    });
-
-    if (existing) {
-      existing.questions.push(...fallbackQuestions.slice(0, Math.max(0, 3 - existing.questions.length)));
-    } else if (fallbackQuestions.length > 0) {
-      normalizedSections.push({
-        ...fallbackSection,
-        questions: fallbackQuestions,
-      });
-    }
-  }
-
-  return normalizedSections;
+    return { ...section, questions: uniqueQuestions };
+  }).filter((section) => section.questions.length > 0 || /problem solving/i.test(section.title));
 };
 
 // ─── LLM Provider Calls ─────────────────────────────────────
@@ -751,10 +664,7 @@ const callOpenAI = async (prompt) => {
   return payload?.choices?.[0]?.message?.content || "";
 };
 
-const callGroq = async (prompt) => {
-  const apiKey = process.env.GROQ_API_KEY || process.env.LLM_API_KEY;
-  if (!apiKey) throw new Error("GROQ_API_KEY (or LLM_API_KEY) is missing");
-
+const callGroqWithKey = async (apiKey, prompt) => {
   const model = getLLMModel("groq");
   const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
@@ -782,11 +692,50 @@ const callGroq = async (prompt) => {
   return payload?.choices?.[0]?.message?.content || "";
 };
 
-const askLLM = async (prompt) => {
+const callGroq = async (prompt) => {
+  const primaryKey = process.env.GROQ_API_KEY || process.env.LLM_API_KEY;
+  if (!primaryKey) throw new Error("GROQ_API_KEY (or LLM_API_KEY) is missing");
+
+  try {
+    return await callGroqWithKey(primaryKey, prompt);
+  } catch (primaryError) {
+    const isRateLimit = String(primaryError?.message || "").includes("429");
+    const extraKey = process.env.GROQ_API_KEY_EXTRA || process.env.groq_api_key_extra;
+
+    if (isRateLimit && extraKey) {
+      console.warn("Primary Groq key rate-limited, switching to extra key.");
+      return callGroqWithKey(extraKey, prompt);
+    }
+
+    throw primaryError;
+  }
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const askLLM = async (prompt, retries = 1) => {
   const provider = getLLMProvider();
-  if (provider === "groq") return callGroq(prompt);
-  if (provider === "openai") return callOpenAI(prompt);
-  return callGemini(prompt);
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      if (provider === "groq") return await callGroq(prompt);
+      if (provider === "openai") return await callOpenAI(prompt);
+      return await callGemini(prompt);
+    } catch (error) {
+      lastError = error;
+      const isServerError = /\b5\d{2}\b/.test(String(error?.message || ""));
+
+      if (isServerError && attempt < retries) {
+        await sleep(2000);
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw lastError;
 };
 
 // ─── Resume Skill Extraction ────────────────────────────────
@@ -875,55 +824,12 @@ export const generateAllQuestions = async ({ resumeData, role, company }) => {
     // RAG context is optional
   }
 
-  // Get coding question from MongoDB dataset instead of Qdrant/RAG
+  // Get coding question from MongoDB dataset
   try {
     preferredCodingQuestion = await getRandomDatasetCodingQuestion();
   } catch (_error) {
-    console.warn("MongoDB dataset coding question fetch failed, will use fallback:", _error.message);
+    console.warn("MongoDB dataset coding question fetch failed:", _error.message);
   }
-
-  const fallbackSections = [
-    {
-      title: "Introduction & Background",
-      description: "Getting to know the candidate",
-      questions: [
-        { question: `Tell me about yourself and why you're interested in the ${role} role at ${company}.`, difficulty: "easy" },
-        { question: `Walk me through your most relevant experience for this ${role} position.`, difficulty: "easy" },
-      ],
-    },
-    {
-      title: "Technical Skills",
-      description: "Core technical competency assessment",
-      questions: [
-        { question: `Explain a complex technical challenge you solved using ${(resumeData.technical_skills || []).slice(0, 3).join(", ") || "your primary technology stack"}.`, difficulty: "medium" },
-        { question: `How would you design a scalable system architecture for ${company}? Walk me through your approach.`, difficulty: "hard" },
-        { question: "Describe your experience with testing strategies and how you ensure code quality.", difficulty: "medium" },
-      ],
-    },
-    {
-      title: "System Design",
-      description: "Analytical and design thinking assessment",
-      questions: [
-        { question: "Design a real-time notification system. What technologies and patterns would you use?", difficulty: "hard" },
-      ],
-    },
-    {
-      title: "Problem Solving",
-      description: "Coding and algorithmic reasoning",
-      questions: [
-        preferredCodingQuestion ? clonePlainObject(preferredCodingQuestion) : pickRandomCodingQuestion(),
-      ],
-    },
-    {
-      title: "Behavioral & Cultural Fit",
-      description: "Teamwork, communication, and cultural alignment",
-      questions: [
-        { question: "Describe a time when you had a disagreement with a team member. How did you resolve it?", difficulty: "easy" },
-        { question: `What excites you most about working at ${company}? How do you see yourself contributing?`, difficulty: "easy" },
-        { question: "Tell me about a project where you had to learn a new technology quickly. How did you approach it?", difficulty: "medium" },
-      ],
-    },
-  ];
 
   const prompt = `You are an expert interviewer for ${company} hiring for the role: ${role}.
 
@@ -983,41 +889,36 @@ Use retrieved vector DB question seeds whenever they are available. You may ligh
 
 Do NOT generate a coding question — it will be sourced from a curated dataset and injected automatically.`;
 
-  try {
-    const raw = await askLLM(prompt);
-    const parsed = parseJSONObject(raw, { sections: fallbackSections });
+  const raw = await askLLM(prompt);
+  const parsed = parseJSONObject(raw, null);
 
-    if (!Array.isArray(parsed.sections) || parsed.sections.length === 0) {
-      return fallbackSections;
-    }
-
-    // Validate and normalize
-    const normalizedSections = await Promise.all(parsed.sections.map(async (section) => ({
-      title: String(section.title || "General"),
-      description: String(section.description || ""),
-      questions: Array.isArray(section.questions)
-        ? await Promise.all(section.questions.map(async (q) => {
-            if (q.type === "coding") {
-              if (preferredCodingQuestion) {
-                return clonePlainObject(preferredCodingQuestion);
-              }
-              return enrichCodingQuestion(q, { role, company });
-            }
-
-            return {
-              question: String(q.question || "Tell me about your experience."),
-              difficulty: normalizeDifficulty(q.difficulty, "medium"),
-              type: "text",
-            };
-          }))
-        : [],
-    })));
-
-    return ensureCodingQuestion(dedupeSections(normalizedSections, fallbackSections), preferredCodingQuestion);
-  } catch (_error) {
-    console.error("LLM ERROR (generateAllQuestions):", _error);
-    return ensureCodingQuestion(fallbackSections, preferredCodingQuestion);
+  if (!parsed || !Array.isArray(parsed.sections) || parsed.sections.length === 0) {
+    throw new Error("LLM returned empty or invalid sections for question generation");
   }
+
+  // Validate and normalize
+  const normalizedSections = await Promise.all(parsed.sections.map(async (section) => ({
+    title: String(section.title || "General"),
+    description: String(section.description || ""),
+    questions: Array.isArray(section.questions)
+      ? await Promise.all(section.questions.map(async (q) => {
+          if (q.type === "coding") {
+            if (preferredCodingQuestion) {
+              return clonePlainObject(preferredCodingQuestion);
+            }
+            return enrichCodingQuestion(q, { role, company });
+          }
+
+          return {
+            question: String(q.question || "Tell me about your experience."),
+            difficulty: normalizeDifficulty(q.difficulty, "medium"),
+            type: "text",
+          };
+        }))
+      : [],
+  })));
+
+  return ensureCodingQuestion(dedupeSections(normalizedSections), preferredCodingQuestion);
 };
 
 // ─── Evaluate Answer ────────────────────────────────────────
@@ -1112,9 +1013,8 @@ If the candidate answer is off-topic, addresses a different question, or clearly
         ? parsed.counter_question
         : `Please answer the original question directly and cover the main missing areas: ${question}`;
     const allowCounterQuestion =
-      (Boolean(parsed.should_counter_question) || offTopicAnswer)
-      && clearlyUnsatisfactory
-      && !skippedAnswer;
+      !skippedAnswer
+      && (Boolean(parsed.should_counter_question) || (offTopicAnswer && clearlyUnsatisfactory));
 
     return {
       feedback: typeof parsed.feedback === "string" ? parsed.feedback : fallback.feedback,
@@ -1126,6 +1026,18 @@ If the candidate answer is off-topic, addresses a different question, or clearly
       counter_question: allowCounterQuestion ? suggestedCounterQuestion : null,
     };
   } catch (_error) {
+    console.error("LLM ERROR (evaluateAnswer):", _error?.message || _error);
+    // Even on LLM failure, apply local heuristics for counter questions
+    const normalizedAnswer = String(answer || "").trim().toLowerCase();
+    const skippedAnswer = normalizedAnswer === "(skipped)" || normalizedAnswer.includes("i don't know");
+    const offTopicAnswer = isLikelyOffTopic(question, answer);
+    if (offTopicAnswer && !skippedAnswer) {
+      return {
+        ...fallback,
+        should_counter_question: true,
+        counter_question: `It seems your answer may not have addressed the question directly. Could you please answer: ${question}`,
+      };
+    }
     return fallback;
   }
 };
@@ -1256,7 +1168,11 @@ Return JSON:
       hint: typeof parsed.hint === "string" ? compact(parsed.hint) : null,
     };
   } catch (_error) {
-    return fallback;
+    console.error("LLM ERROR (resolveDoubt):", _error?.message || _error);
+    return {
+      response: `Regarding your doubt about the current question: "${(currentQuestion || "").slice(0, 120)}" — try breaking the problem into smaller parts. Think about what the question is really asking, identify the core concept, and outline your approach step by step. Feel free to ask a more specific doubt if you need further help.`,
+      hint: "Focus on the key requirement of the question and think about edge cases.",
+    };
   }
 };
 
