@@ -1,4 +1,3 @@
-import InterviewQuestion from "../models/InterviewQuestion.js";
 import InterviewReport from "../models/InterviewReport.js";
 import InterviewSession from "../models/InterviewSession.js";
 
@@ -34,18 +33,7 @@ export const updateSessionSections = async (sessionId, sections, totalQuestions)
   );
 };
 
-// ─── Question Operations ────────────────────────────────────
-
-export const addQuestion = async ({ sessionId, questionNumber, questionText, sectionIndex, sectionTitle, difficulty }) => {
-  return InterviewQuestion.create({
-    sessionId,
-    questionNumber,
-    questionText,
-    sectionIndex: sectionIndex || 0,
-    sectionTitle: sectionTitle || "",
-    difficulty: difficulty || "medium",
-  });
-};
+// ─── Question Operations (embedded on session) ──────────────
 
 export const addAllQuestions = async (sessionId, sections) => {
   const questions = [];
@@ -55,7 +43,6 @@ export const addAllQuestions = async (sessionId, sections) => {
     const section = sections[sectionIndex];
     for (const q of section.questions || []) {
       questions.push({
-        sessionId,
         questionNumber,
         questionText: q.question,
         sectionIndex,
@@ -68,15 +55,23 @@ export const addAllQuestions = async (sessionId, sections) => {
     }
   }
 
-  return InterviewQuestion.insertMany(questions);
+  return InterviewSession.findByIdAndUpdate(
+    sessionId,
+    { $push: { questions: { $each: questions } } },
+    { new: true }
+  );
 };
 
 export const getQuestions = async (sessionId) => {
-  return InterviewQuestion.find({ sessionId }).sort({ questionNumber: 1 });
+  const session = await InterviewSession.findById(sessionId);
+  if (!session) return [];
+  return [...session.questions].sort((a, b) => a.questionNumber - b.questionNumber);
 };
 
 export const getQuestionByNumber = async (sessionId, questionNumber) => {
-  return InterviewQuestion.findOne({ sessionId, questionNumber });
+  const session = await InterviewSession.findById(sessionId);
+  if (!session) return null;
+  return session.questions.find((q) => q.questionNumber === questionNumber) || null;
 };
 
 export const getCurrentQuestionIndex = async (sessionId) => {
@@ -85,59 +80,57 @@ export const getCurrentQuestionIndex = async (sessionId) => {
 };
 
 export const updateQuestionIndex = async (sessionId, nextIndex) => {
-  // Also update section index
-  const questions = await getQuestions(sessionId);
-  const currentQ = questions[nextIndex];
+  const session = await InterviewSession.findById(sessionId);
+  if (!session) return null;
+  const currentQ = session.questions.find((q) => q.questionNumber === nextIndex);
   const sectionIndex = currentQ ? currentQ.sectionIndex : 0;
 
-  return InterviewSession.findByIdAndUpdate(
-    sessionId,
-    { currentQuestionIndex: nextIndex, currentSectionIndex: sectionIndex },
-    { new: true }
-  );
+  session.currentQuestionIndex = nextIndex;
+  session.currentSectionIndex = sectionIndex;
+  return session.save();
 };
 
 export const submitAnswer = async ({ sessionId, questionNumber, answer, feedback, score, strengths, improvements, modelAnswer }) => {
-  return InterviewQuestion.findOneAndUpdate(
-    { sessionId, questionNumber },
-    {
-      userAnswer: answer,
-      feedback,
-      score,
-      strengths: strengths || [],
-      improvements: improvements || [],
-      modelAnswer: modelAnswer || "",
-      answeredAt: new Date(),
-    },
-    { new: true }
-  );
+  const session = await InterviewSession.findById(sessionId);
+  if (!session) return null;
+  const q = session.questions.find((q) => q.questionNumber === questionNumber);
+  if (!q) return null;
+
+  q.userAnswer = answer;
+  q.feedback = feedback;
+  q.score = score;
+  q.strengths = strengths || [];
+  q.improvements = improvements || [];
+  q.modelAnswer = modelAnswer || "";
+  q.answeredAt = new Date();
+
+  await session.save();
+  return q;
 };
 
 // ─── Counter Question Operations ────────────────────────────
 
 export const addCounterQuestion = async (sessionId, questionNumber, counterQuestion) => {
-  return InterviewQuestion.findOneAndUpdate(
-    { sessionId, questionNumber },
-    {
-      $push: {
-        counterQuestions: {
-          question: counterQuestion,
-          askedAt: new Date(),
-        },
-      },
-    },
-    { new: true }
-  );
+  const session = await InterviewSession.findById(sessionId);
+  if (!session) return null;
+  const q = session.questions.find((q) => q.questionNumber === questionNumber);
+  if (!q) return null;
+
+  q.counterQuestions.push({ question: counterQuestion, askedAt: new Date() });
+  await session.save();
+  return q;
 };
 
 export const submitCounterAnswer = async (sessionId, questionNumber, counterIndex, answer, feedback) => {
-  const question = await getQuestionByNumber(sessionId, questionNumber);
-  if (!question || !question.counterQuestions[counterIndex]) return null;
+  const session = await InterviewSession.findById(sessionId);
+  if (!session) return null;
+  const q = session.questions.find((q) => q.questionNumber === questionNumber);
+  if (!q || !q.counterQuestions[counterIndex]) return null;
 
-  question.counterQuestions[counterIndex].userAnswer = answer;
-  question.counterQuestions[counterIndex].feedback = feedback;
-  await question.save();
-  return question;
+  q.counterQuestions[counterIndex].userAnswer = answer;
+  q.counterQuestions[counterIndex].feedback = feedback;
+  await session.save();
+  return q;
 };
 
 // ─── Conversation History ───────────────────────────────────

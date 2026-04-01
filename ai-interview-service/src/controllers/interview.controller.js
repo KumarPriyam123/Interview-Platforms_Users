@@ -412,7 +412,7 @@ export const nextQuestion = async (req, res, next) => {
 
     await updateQuestionIndex(sessionId, nextIndex);
 
-    const nextQ = questions[nextIndex];
+    const nextQ = questions.find((q) => q.questionNumber === nextIndex) || questions[nextIndex];
 
     // Add next question to conversation history
     await addToConversationHistory(sessionId, {

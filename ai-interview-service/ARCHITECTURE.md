@@ -68,6 +68,5 @@ The RAG layer is used in three places:
 ## Data Model
 
 Collections:
-- `InterviewSession`: email, company, role, sections, conversationHistory
-- `InterviewQuestion`: sectionIndex, sectionTitle, difficulty, counterQuestions
+- `InterviewSession`: email, company, role, sections, questions (embedded), conversationHistory
 - `InterviewReport`: overallScore, sectionScores, skillAssessment
