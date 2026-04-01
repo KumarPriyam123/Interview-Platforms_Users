@@ -14,27 +14,28 @@ import {
   stopInterview,
   cleanQuestion,
 } from "../controllers/interview.controller.js";
-import {
-  addCompanyContext,
-  addInterviewKnowledge,
-  getRagStatus,
-  searchRagKnowledge,
-  getRagDataset,
-  verifyRagQuestion,
-} from "../controllers/rag.controller.js";
+// RAG disabled for now
+// import {
+//   addCompanyContext,
+//   addInterviewKnowledge,
+//   getRagStatus,
+//   searchRagKnowledge,
+//   getRagDataset,
+//   verifyRagQuestion,
+// } from "../controllers/rag.controller.js";
 import { getMongoDatasetQuestions } from "../controllers/dataset.controller.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
-// Qdrant RAG management
-router.get("/rag/status", getRagStatus);
-router.get("/rag/dataset", getRagDataset);
+// Qdrant RAG management — disabled for now
+// router.get("/rag/status", getRagStatus);
+// router.get("/rag/dataset", getRagDataset);
 router.get("/dataset/questions", getMongoDatasetQuestions);
-router.post("/rag/verify", verifyRagQuestion);
-router.post("/rag/company-context", addCompanyContext);
-router.post("/rag/knowledge", addInterviewKnowledge);
-router.post("/rag/search", searchRagKnowledge);
+// router.post("/rag/verify", verifyRagQuestion);
+// router.post("/rag/company-context", addCompanyContext);
+// router.post("/rag/knowledge", addInterviewKnowledge);
+// router.post("/rag/search", searchRagKnowledge);
 router.post("/code/run", executeCodingAnswer);
 router.post("/clean-question", cleanQuestion);
 

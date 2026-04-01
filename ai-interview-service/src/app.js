@@ -3,7 +3,8 @@ import express from "express";
 
 import interviewRoutes from "./routes/interview.routes.js";
 import { errorHandler, notFoundHandler } from "./middlewares/error.middleware.js";
-import { getRAGStatus } from "./services/rag.service.js";
+// RAG disabled for now
+// import { getRAGStatus } from "./services/rag.service.js";
 
 export const createApp = () => {
   const app = express();
@@ -21,7 +22,7 @@ export const createApp = () => {
   });
 
   app.get("/health", (_req, res) => {
-    res.json({ status: "ok", version: "2.0.0", rag: getRAGStatus() });
+    res.json({ status: "ok", version: "2.0.0", rag: { enabled: false, reason: "RAG disabled temporarily" } });
   });
 
   app.use("/interviews", interviewRoutes);

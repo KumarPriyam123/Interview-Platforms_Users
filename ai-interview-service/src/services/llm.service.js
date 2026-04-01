@@ -9,7 +9,11 @@
  * - Comprehensive final report generation
  */
 
-import { retrieveInterviewContext, retrieveCompanyContext, sampleKnowledge } from "./rag.service.js";
+// RAG disabled for now
+// import { retrieveInterviewContext, retrieveCompanyContext, sampleKnowledge } from "./rag.service.js";
+const retrieveInterviewContext = async () => [];
+const retrieveCompanyContext = async () => "";
+const sampleKnowledge = async () => [];
 import { getRandomDatasetCodingQuestion } from "./dataset.service.js";
 
 const DEFAULT_PROVIDER = "groq";
@@ -879,12 +883,15 @@ Return strictly valid JSON with this structure:
 
 The 5 sections MUST be:
 1. "Introduction & Background" (2 easy questions based SOLELY on their resume and experience)
-2. "Technical Skills" (3 medium/hard questions: Exactly 1 question directly challenging a skill from their resume, and 2 questions testing general core technical concepts for the ${role} role based on the company context provided)
+2. "Technical Skills" (3 medium/hard questions):
+   - Question 1: Pick ONE specific technology/framework/tool from the candidate's resume skills list and ask a deep, industry-level question that tests production-grade knowledge (e.g. performance tuning, internal architecture, advanced patterns, real-world pitfalls). This question MUST reference the chosen resume skill by name.
+   - Question 2: Ask about a core technical concept that a ${role} at ${company} must know. Do NOT use the candidate's resume — base this purely on what ${company} values for this role (e.g. system internals, distributed systems, concurrency, security, CI/CD).
+   - Question 3: Ask about another industry-standard technology or practice relevant to ${role} at ${company} that is NOT from the candidate's resume. Focus on what the company's tech stack or domain demands.
 3. "System Design" (Exactly 1 hard question presenting a realistic, scalable system design scenario relevant to ${company})
 4. "Problem Solving" (Leave this section with an empty questions array — the coding question will be injected from an external dataset)
 5. "Behavioral & Cultural Fit" (2 easy/medium questions assessing soft skills and cultural alignment)
 
-Make questions specific to ${company} and the ${role} role. Tailor technical questions to the candidate's listed skills.
+Make questions specific to ${company} and the ${role} role.
 Use retrieved vector DB question seeds whenever they are available. You may lightly adapt wording for the role and company, but keep the original question intent.
 
 Do NOT generate a coding question — it will be sourced from a curated dataset and injected automatically.`;

@@ -68,6 +68,45 @@ function InterviewPage() {
   const recordingBaseTextRef = useRef('')
   const recordingFinalTextRef = useRef('')
 
+  const formatExampleInput = useCallback((input) => {
+    if (!input) return ''
+    // If it's already a readable string like "nums = [2,7,11,15], target = 9", keep it
+    if (typeof input === 'string') {
+      // Try to parse as JSON object and format fields separately
+      try {
+        const parsed = JSON.parse(input)
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return Object.entries(parsed)
+            .filter(([k]) => k !== 'output' && k !== 'hidden')
+            .map(([k, v]) => `${k} = ${JSON.stringify(v)}`)
+            .join(', ')
+        }
+      } catch { /* not JSON, return as-is */ }
+      return input
+    }
+    // If it's an object, format each key separately
+    if (typeof input === 'object' && !Array.isArray(input)) {
+      return Object.entries(input)
+        .filter(([k]) => k !== 'output' && k !== 'hidden')
+        .map(([k, v]) => `${k} = ${JSON.stringify(v)}`)
+        .join(', ')
+    }
+    return JSON.stringify(input)
+  }, [])
+
+  const formatTestCaseDisplay = useCallback((inputJson) => {
+    // Parse JSON input and return array of {key, value} for separate display
+    try {
+      const parsed = typeof inputJson === 'string' ? JSON.parse(inputJson) : inputJson
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return Object.entries(parsed)
+          .filter(([k]) => k !== 'output' && k !== 'hidden')
+          .map(([k, v]) => ({ key: k, value: JSON.stringify(v) }))
+      }
+    } catch { /* not valid JSON */ }
+    return null // null means show as raw text
+  }, [])
+
   const createDefaultTestCases = useCallback(() => ([
     { id: 1, name: 'Case 1', input: '', expectedOutput: '', actualOutput: '', status: 'idle', passed: null },
     { id: 2, name: 'Case 2', input: '', expectedOutput: '', actualOutput: '', status: 'idle', passed: null },
@@ -526,64 +565,64 @@ function InterviewPage() {
       }
       setAnswer(buildCodingStarter(nextLanguage, currentQ.question, currentQ.coding).code)
       setCodeOutput('')
-      setTestCases(buildCodingTestCases(currentQ.coding))
+
+      // Use MongoDB visibleTestCases directly (1-3 cases) if available
+      const mongoTestCases = currentQ?.coding?.visibleTestCases
+      const hasMongoTestCases = Array.isArray(mongoTestCases) && mongoTestCases.length > 0
+      if (hasMongoTestCases) {
+        setTestCases(mongoTestCases.slice(0, 3).map((tc, i) => ({
+          id: i + 1,
+          name: `Case ${i + 1}`,
+          input: JSON.stringify(
+            Object.fromEntries(Object.entries(tc).filter(([k]) => k !== 'output' && k !== 'hidden')),
+            null, 2
+          ),
+          expectedOutput: String(tc.output || ''),
+          actualOutput: '',
+          status: 'idle',
+          passed: null,
+          structured: true,
+        })))
+      } else {
+        setTestCases(buildCodingTestCases(currentQ.coding))
+      }
+
       setCaseResults([])
       setActiveTestCaseIndex(0)
       setCustomInput('')
       setCustomOutput('')
       setCustomRunStatus('idle')
 
-      // LLM clean the question for display + extract test cases from examples
+      // LLM clean the question for display only (don't overwrite test cases)
       setCleanedQuestion(null)
       setCleaningQuestion(true)
       cleanQuestionText(currentQ.question, currentQ?.coding?.source?.title || '')
         .then((res) => {
-          const data = res.data
-          setCleanedQuestion(data)
-          // Populate test cases from LLM-extracted examples
-          if (Array.isArray(data.testCases) && data.testCases.length > 0) {
-            setTestCases(data.testCases.map((tc, i) => {
-              let inputStr = ''
-              if (typeof tc.input === 'object' && tc.input !== null) {
-                inputStr = JSON.stringify(tc.input, null, 2)
-              } else if (typeof tc.input === 'string') {
-                // Try to ensure it's valid JSON for structured mode
-                try {
-                  const parsed = JSON.parse(tc.input)
-                  inputStr = JSON.stringify(parsed, null, 2)
-                } catch {
-                  inputStr = tc.input
+          setCleanedQuestion(res.data)
+          // Only populate test cases from LLM if MongoDB didn't provide them
+          if (!hasMongoTestCases) {
+            const data = res.data
+            if (Array.isArray(data.testCases) && data.testCases.length > 0) {
+              setTestCases(data.testCases.slice(0, 3).map((tc, i) => {
+                let inputStr = ''
+                if (typeof tc.input === 'object' && tc.input !== null) {
+                  inputStr = JSON.stringify(tc.input, null, 2)
+                } else if (typeof tc.input === 'string') {
+                  try { inputStr = JSON.stringify(JSON.parse(tc.input), null, 2) }
+                  catch { inputStr = tc.input }
                 }
-              }
-              let expectedStr = ''
-              if (typeof tc.expectedOutput === 'object' && tc.expectedOutput !== null) {
-                expectedStr = JSON.stringify(tc.expectedOutput)
-              } else {
-                expectedStr = String(tc.expectedOutput || '')
-              }
-              return {
-                id: i + 1,
-                name: `Case ${i + 1}`,
-                input: inputStr,
-                expectedOutput: expectedStr,
-                actualOutput: '',
-                status: 'idle',
-                passed: null,
-                structured: currentQ?.coding?.executionStyle === 'leetcode',
-              }
-            }))
-          } else if (Array.isArray(data.examples) && data.examples.length > 0) {
-            // Fallback: use examples as test cases
-            setTestCases(data.examples.map((ex, i) => ({
-              id: i + 1,
-              name: `Case ${i + 1}`,
-              input: ex.input || '',
-              expectedOutput: ex.output || '',
-              actualOutput: '',
-              status: 'idle',
-              passed: null,
-              structured: false,
-            })))
+                return {
+                  id: i + 1,
+                  name: `Case ${i + 1}`,
+                  input: inputStr,
+                  expectedOutput: typeof tc.expectedOutput === 'object' ? JSON.stringify(tc.expectedOutput) : String(tc.expectedOutput || ''),
+                  actualOutput: '',
+                  status: 'idle',
+                  passed: null,
+                  structured: currentQ?.coding?.executionStyle === 'leetcode',
+                }
+              }))
+            }
           }
         })
         .catch(() => setCleanedQuestion(null))
@@ -912,7 +951,7 @@ function InterviewPage() {
                                   <div key={i} className="lc-example">
                                     <p className="lc-example-title"><strong>Example {i + 1}:</strong></p>
                                     <div className="lc-example-block">
-                                      <div><strong>Input:</strong> <code>{typeof ex.input === 'object' ? JSON.stringify(ex.input) : ex.input}</code></div>
+                                      <div><strong>Input:</strong> <code>{formatExampleInput(ex.input)}</code></div>
                                       <div><strong>Output:</strong> <code>{typeof ex.output === 'object' ? JSON.stringify(ex.output) : ex.output}</code></div>
                                       {ex.explanation && <div><strong>Explanation:</strong> {ex.explanation}</div>}
                                     </div>
@@ -1053,26 +1092,70 @@ function InterviewPage() {
 
                               {activeTestCase && (
                                 <div className="leetcode-testcase-fields">
-                                  <div className="leetcode-field">
-                                    <div className="leetcode-field-label">Input</div>
-                                    <textarea
-                                      className="leetcode-field-input"
-                                      placeholder={isStructuredCoding ? '{"key": "value"}' : 'stdin input'}
-                                      value={activeTestCase.input}
-                                      onChange={(e) => updateTestCaseField('input', e.target.value)}
-                                      rows={2}
-                                    />
-                                  </div>
-                                  <div className="leetcode-field">
-                                    <div className="leetcode-field-label">Expected Output</div>
-                                    <textarea
-                                      className="leetcode-field-input"
-                                      placeholder="expected output"
-                                      value={activeTestCase.expectedOutput}
-                                      onChange={(e) => updateTestCaseField('expectedOutput', e.target.value)}
-                                      rows={1}
-                                    />
-                                  </div>
+                                  {(() => {
+                                    const fields = isStructuredCoding ? formatTestCaseDisplay(activeTestCase.input) : null
+                                    if (fields) {
+                                      return (
+                                        <>
+                                          {fields.map((f) => (
+                                            <div key={f.key} className="leetcode-field">
+                                              <div className="leetcode-field-label">{f.key}</div>
+                                              <textarea
+                                                className="leetcode-field-input"
+                                                value={f.value}
+                                                onChange={(e) => {
+                                                  // Update individual field inside the JSON input
+                                                  try {
+                                                    const parsed = JSON.parse(activeTestCase.input)
+                                                    parsed[f.key] = JSON.parse(e.target.value)
+                                                    updateTestCaseField('input', JSON.stringify(parsed, null, 2))
+                                                  } catch {
+                                                    // If parse fails, update raw
+                                                    updateTestCaseField('input', e.target.value)
+                                                  }
+                                                }}
+                                                rows={1}
+                                              />
+                                            </div>
+                                          ))}
+                                          <div className="leetcode-field">
+                                            <div className="leetcode-field-label">Expected Output</div>
+                                            <textarea
+                                              className="leetcode-field-input"
+                                              placeholder="expected output"
+                                              value={activeTestCase.expectedOutput}
+                                              onChange={(e) => updateTestCaseField('expectedOutput', e.target.value)}
+                                              rows={1}
+                                            />
+                                          </div>
+                                        </>
+                                      )
+                                    }
+                                    return (
+                                      <>
+                                        <div className="leetcode-field">
+                                          <div className="leetcode-field-label">Input</div>
+                                          <textarea
+                                            className="leetcode-field-input"
+                                            placeholder={isStructuredCoding ? '{"key": "value"}' : 'stdin input'}
+                                            value={activeTestCase.input}
+                                            onChange={(e) => updateTestCaseField('input', e.target.value)}
+                                            rows={2}
+                                          />
+                                        </div>
+                                        <div className="leetcode-field">
+                                          <div className="leetcode-field-label">Expected Output</div>
+                                          <textarea
+                                            className="leetcode-field-input"
+                                            placeholder="expected output"
+                                            value={activeTestCase.expectedOutput}
+                                            onChange={(e) => updateTestCaseField('expectedOutput', e.target.value)}
+                                            rows={1}
+                                          />
+                                        </div>
+                                      </>
+                                    )
+                                  })()}
                                 </div>
                               )}
                             </div>
@@ -1091,10 +1174,23 @@ function InterviewPage() {
                                     tc.actualOutput && (
                                       <div key={tc.id} className="leetcode-result-case">
                                         <div className="leetcode-field-label">Case {index + 1}</div>
-                                        <div className="leetcode-result-row">
-                                          <span className="leetcode-result-label">Input:</span>
-                                          <code>{tc.input}</code>
-                                        </div>
+                                        {(() => {
+                                          const fields = isStructuredCoding ? formatTestCaseDisplay(tc.input) : null
+                                          if (fields) {
+                                            return fields.map((f) => (
+                                              <div key={f.key} className="leetcode-result-row">
+                                                <span className="leetcode-result-label">{f.key}:</span>
+                                                <code>{f.value}</code>
+                                              </div>
+                                            ))
+                                          }
+                                          return (
+                                            <div className="leetcode-result-row">
+                                              <span className="leetcode-result-label">Input:</span>
+                                              <code>{tc.input}</code>
+                                            </div>
+                                          )
+                                        })()}
                                         <div className="leetcode-result-row">
                                           <span className="leetcode-result-label">Expected:</span>
                                           <code>{tc.expectedOutput}</code>

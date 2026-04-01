@@ -54,7 +54,7 @@ const formatExecutionOutput = (payload = {}) =>
 
 const callJudge0 = async ({ sourceCode, languageId, stdin = "" }) => {
   const query = new URLSearchParams({
-    base64_encoded: "false",
+    base64_encoded: "true",
     wait: "true",
     fields: "stdout,stderr,compile_output,message,status_id,time,memory",
   });
@@ -64,8 +64,8 @@ const callJudge0 = async ({ sourceCode, languageId, stdin = "" }) => {
     headers: getJudge0Headers(),
     body: JSON.stringify({
       language_id: languageId,
-      source_code: sourceCode,
-      stdin,
+      source_code: Buffer.from(sourceCode, "utf-8").toString("base64"),
+      stdin: Buffer.from(stdin, "utf-8").toString("base64"),
     }),
   });
 
@@ -74,7 +74,13 @@ const callJudge0 = async ({ sourceCode, languageId, stdin = "" }) => {
     throw new Error(`Judge0 request failed: ${response.status} ${errorText}`);
   }
 
-  return response.json();
+  const result = await response.json();
+  // Decode base64-encoded response fields
+  if (result.stdout) result.stdout = Buffer.from(result.stdout, "base64").toString("utf-8");
+  if (result.stderr) result.stderr = Buffer.from(result.stderr, "base64").toString("utf-8");
+  if (result.compile_output) result.compile_output = Buffer.from(result.compile_output, "base64").toString("utf-8");
+  if (result.message) result.message = Buffer.from(result.message, "base64").toString("utf-8");
+  return result;
 };
 
 const detectExecutionStyle = (testCases = []) =>
@@ -378,15 +384,35 @@ const runLeetCodeStyleCode = async ({ code, testCases, mode }) => {
   const signature = extractSolveSignature(code);
 
   const results = [];
-  for (const testCase of selectedCases) {
+  for (let i = 0; i < selectedCases.length; i++) {
+    const testCase = selectedCases[i];
     const caseIndex = normalizedCases.indexOf(testCase);
-    const result = await executeStructuredCase({
-      userCode: code,
-      testCase,
-      signature,
-      caseIndex,
-    });
-    results.push(result);
+    // Small delay between Judge0 calls to avoid rate limiting
+    if (i > 0) await new Promise((r) => setTimeout(r, 500));
+    try {
+      const result = await executeStructuredCase({
+        userCode: code,
+        testCase,
+        signature,
+        caseIndex,
+      });
+      results.push(result);
+    } catch (err) {
+      results.push({
+        index: caseIndex,
+        passed: false,
+        input: Object.fromEntries(
+          Object.entries(testCase).filter(([key]) => key !== "output" && key !== "hidden")
+        ),
+        expectedOutput: String(testCase.output || ""),
+        actualOutput: err.message || "Execution error",
+        statusId: 13,
+        status: "Internal Error",
+        hidden: Boolean(testCase.hidden),
+        time: null,
+        memory: null,
+      });
+    }
   }
 
   const summary = evaluateResults(results);
