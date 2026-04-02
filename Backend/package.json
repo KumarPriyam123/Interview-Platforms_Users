@@ -6,9 +6,9 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js",
+    "dev": "npx nodemon src/index.js",
     "worker": "node src/workers/codeExecution.worker.js",
-    "dev:worker": "nodemon src/workers/codeExecution.worker.js",
+    "dev:worker": "npx nodemon src/workers/codeExecution.worker.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
