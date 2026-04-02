@@ -53,6 +53,13 @@
   transform: translateY(-1px);
 }
 
+.btn:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
 .btn-primary {
   color: #03120f;
   background: linear-gradient(90deg, #15d1af 0%, #2de6bf 100%);
@@ -679,6 +686,130 @@
   color: #bfd1db;
   padding: 1.1rem 1.2rem;
   font: 500 0.93rem/1.65 "IBM Plex Mono", "Fira Code", Consolas, monospace;
+}
+
+.p2p-run-shell {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.p2p-run-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.p2p-language-picker {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.p2p-language-label {
+  color: #8ea2ad;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.p2p-language-select {
+  min-width: 148px;
+  border: 1px solid #28343c;
+  border-radius: 12px;
+  background: #0b1014;
+  color: #dce7ec;
+  padding: 0.62rem 0.8rem;
+  font: inherit;
+  cursor: pointer;
+}
+
+.p2p-language-select:disabled {
+  cursor: not-allowed;
+}
+
+.p2p-language-select:focus {
+  outline: 0;
+  border-color: #35cdb4;
+  box-shadow: 0 0 0 3px rgba(53, 205, 180, 0.16);
+}
+
+.p2p-run-pill.is-error {
+  border-color: rgba(191, 84, 84, 0.45);
+  color: #ffc1c1;
+}
+
+.p2p-stdin-textarea {
+  min-height: 96px;
+  resize: vertical;
+  border: 1px solid #28343c;
+  border-radius: 12px;
+  background: #0b1014;
+  color: #dbe7ed;
+  padding: 0.85rem 0.95rem;
+  line-height: 1.6;
+  font: 500 0.88rem/1.55 "IBM Plex Mono", "Fira Code", Consolas, monospace;
+}
+
+.p2p-run-meta {
+  color: #8ea2ad;
+  font-size: 0.82rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.p2p-run-error {
+  border: 1px solid rgba(191, 84, 84, 0.45);
+  border-radius: 12px;
+  background: rgba(76, 22, 22, 0.45);
+  color: #ffd1d1;
+  padding: 0.75rem 0.85rem;
+}
+
+.p2p-run-results {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.p2p-run-summary {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.p2p-run-note {
+  border: 1px solid rgba(61, 174, 154, 0.32);
+  border-radius: 12px;
+  background: rgba(18, 76, 67, 0.18);
+  color: #ccebe4;
+  padding: 0.75rem 0.85rem;
+  line-height: 1.6;
+}
+
+.p2p-terminal {
+  border: 1px solid #22323a;
+  border-radius: 12px;
+  background: #081015;
+  padding: 0.85rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.p2p-terminal strong {
+  color: #dce7ec;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.p2p-terminal pre {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #bfd1db;
+  font: 500 0.85rem/1.6 "IBM Plex Mono", "Fira Code", Consolas, monospace;
 }
 
 .p2p-video-grid {

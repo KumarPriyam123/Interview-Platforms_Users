@@ -1,11 +1,26 @@
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useWebRTC } from '../hooks/useWebRTC'
-import { mockInterviewPrompt, mockStarterCode } from '../services/mockInterviewData'
+import { createExecutionJob, pollExecutionJob } from '../services/codeExecution'
+import {
+  createExecutionStarterCodeByLanguage,
+  getExecutionStarterCode,
+  mockInterviewPrompt,
+} from '../services/mockInterviewData'
 import { SIGNALING_URL } from '../utils/realtimeConfig'
 
 const ROOM_POLL_INTERVAL = 5000
+const EXECUTION_POLL_TIMEOUT = 120000
 const MIN_CENTER_WIDTH = 28
+const EXECUTION_LANGUAGE_OPTIONS = [
+  { value: 'javascript', label: 'JavaScript' },
+  { value: 'python', label: 'Python' },
+  { value: 'cpp', label: 'C++' },
+  { value: 'java', label: 'Java' },
+]
+const SUPPORTED_EXECUTION_LANGUAGES = new Set(
+  EXECUTION_LANGUAGE_OPTIONS.map((option) => option.value),
+)
 
 const defaultProblemTitle = 'Invert Binary Tree'
 const defaultProblemBody = [
@@ -85,6 +100,49 @@ function mergeMessages(currentMessages, incomingMessages) {
   return merged
 }
 
+function getExecutionStateLabel(executionState) {
+  switch (executionState) {
+    case 'queueing':
+      return 'Submitting job'
+    case 'queued':
+    case 'waiting':
+      return 'Queued'
+    case 'active':
+      return 'Running'
+    case 'completed':
+      return 'Completed'
+    case 'failed':
+      return 'Failed'
+    default:
+      return 'Ready to run'
+  }
+}
+
+function getExecutionOutcomeLabel(result) {
+  switch (result?.outcome) {
+    case 'success':
+      return 'Success'
+    case 'compilation_error':
+      return 'Compilation Error'
+    case 'runtime_error':
+      return 'Runtime Error'
+    case 'timeout':
+      return 'Timeout'
+    case 'system_error':
+      return 'System Error'
+    default:
+      return 'No result yet'
+  }
+}
+
+function getLanguageLabel(language) {
+  return EXECUTION_LANGUAGE_OPTIONS.find((option) => option.value === language)?.label || language
+}
+
+function normalizeExecutionLanguage(language) {
+  return SUPPORTED_EXECUTION_LANGUAGES.has(language) ? language : 'javascript'
+}
+
 export default function P2PInterviewPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -98,7 +156,14 @@ export default function P2PInterviewPage() {
   const [currentRole, setCurrentRole] = useState(initialRole)
   const [problemTitle, setProblemTitle] = useState(defaultProblemTitle)
   const [problemBody, setProblemBody] = useState(defaultProblemBody)
-  const [code, setCode] = useState(mockStarterCode)
+  const [codeByLanguage, setCodeByLanguage] = useState(() => createExecutionStarterCodeByLanguage())
+  const [code, setCode] = useState(() => getExecutionStarterCode('javascript'))
+  const [executionLanguage, setExecutionLanguage] = useState('javascript')
+  const [executionInput, setExecutionInput] = useState('')
+  const [executionJobId, setExecutionJobId] = useState('')
+  const [executionState, setExecutionState] = useState('idle')
+  const [executionResult, setExecutionResult] = useState(null)
+  const [executionError, setExecutionError] = useState('')
   const [chatMessages, setChatMessages] = useState([])
   const [chatDraft, setChatDraft] = useState('')
   const [sessionNotice, setSessionNotice] = useState('')
@@ -112,6 +177,7 @@ export default function P2PInterviewPage() {
   const dragTargetRef = useRef(null)
   const hasSeenPeerRef = useRef(false)
   const hasExitedSessionRef = useRef(false)
+  const executionRequestIdRef = useRef(0)
 
   const roomId = sessionConfig?.roomId ?? ''
   const participantId = sessionConfig?.userId ?? ''
@@ -138,6 +204,14 @@ export default function P2PInterviewPage() {
   } = useWebRTC(roomId, participantId, displayName)
 
   const liveParticipantCount = Math.max(participantCount, roomOccupancy)
+  const isExecutionBusy = ['queueing', 'queued', 'waiting', 'active'].includes(executionState)
+  const executionStateLabel = getExecutionStateLabel(executionState)
+  const executionOutcomeLabel = executionResult ? getExecutionOutcomeLabel(executionResult) : null
+  const selectedLanguageLabel = getLanguageLabel(executionLanguage)
+  const isExecutionOutputEmpty = executionResult
+    && executionResult.outcome === 'success'
+    && !executionResult.stdout
+    && !executionResult.stderr
   const inviteLink = useMemo(
     () => buildInviteLink(isSessionActive ? roomId : draftRoomId),
     [draftRoomId, isSessionActive, roomId],
@@ -151,10 +225,22 @@ export default function P2PInterviewPage() {
     sendPeerEvent('session-sync', {
       problemTitle,
       problemBody,
+      language: executionLanguage,
       code,
+      codeSnapshots: codeByLanguage,
       chatMessages,
     })
-  }, [chatMessages, code, isInterviewer, isSessionActive, problemBody, problemTitle, sendPeerEvent])
+  }, [
+    chatMessages,
+    code,
+    codeByLanguage,
+    executionLanguage,
+    isInterviewer,
+    isSessionActive,
+    problemBody,
+    problemTitle,
+    sendPeerEvent,
+  ])
 
   const exitToFeedback = useCallback(
     (reason, endedBy = remoteUserId || 'Peer') => {
@@ -182,6 +268,12 @@ export default function P2PInterviewPage() {
     },
     [currentRole, displayName, elapsedSeconds, isSessionActive, leaveRoom, navigate, remoteUserId, roomId],
   )
+
+  useEffect(() => {
+    return () => {
+      executionRequestIdRef.current += 1
+    }
+  }, [])
 
   useEffect(() => {
     if (!isSessionActive) {
@@ -276,6 +368,8 @@ export default function P2PInterviewPage() {
     const { type, payload, senderId } = peerEvent
 
     if (type === 'session-sync') {
+      const nextLanguage = normalizeExecutionLanguage(payload?.language)
+
       if (typeof payload?.problemTitle === 'string') {
         setProblemTitle(payload.problemTitle)
       }
@@ -284,8 +378,23 @@ export default function P2PInterviewPage() {
         setProblemBody(payload.problemBody)
       }
 
+      if (payload?.codeSnapshots && typeof payload.codeSnapshots === 'object') {
+        setCodeByLanguage({
+          ...createExecutionStarterCodeByLanguage(),
+          ...payload.codeSnapshots,
+        })
+      }
+
+      setExecutionLanguage(nextLanguage)
+
       if (typeof payload?.code === 'string') {
         setCode(payload.code)
+        setCodeByLanguage((currentCodeByLanguage) => ({
+          ...currentCodeByLanguage,
+          [nextLanguage]: payload.code,
+        }))
+      } else {
+        setCode(getExecutionStarterCode(nextLanguage))
       }
 
       if (Array.isArray(payload?.chatMessages) && payload.chatMessages.length > 0) {
@@ -308,7 +417,13 @@ export default function P2PInterviewPage() {
     }
 
     if (type === 'code-update' && typeof payload?.code === 'string') {
+      const nextLanguage = normalizeExecutionLanguage(payload?.language)
+      setExecutionLanguage(nextLanguage)
       setCode(payload.code)
+      setCodeByLanguage((currentCodeByLanguage) => ({
+        ...currentCodeByLanguage,
+        [nextLanguage]: payload.code,
+      }))
       return
     }
 
@@ -397,12 +512,21 @@ export default function P2PInterviewPage() {
     const nextRole = draftRole === 'interviewee' ? 'interviewee' : 'interviewer'
     const nextDisplayName = draftName.trim() || (nextRole === 'interviewer' ? 'Interviewer' : 'Interviewee')
     const nextUserId = generateParticipantId(nextDisplayName)
+    const nextCodeByLanguage = createExecutionStarterCodeByLanguage()
 
     setDraftRoomId(nextRoomId)
     setCurrentRole(nextRole)
     setProblemTitle(defaultProblemTitle)
     setProblemBody(defaultProblemBody)
-    setCode(mockStarterCode)
+    setCodeByLanguage(nextCodeByLanguage)
+    setCode(nextCodeByLanguage.javascript)
+    setExecutionLanguage('javascript')
+    setExecutionInput('')
+    setExecutionJobId('')
+    setExecutionState('idle')
+    setExecutionResult(null)
+    setExecutionError('')
+    executionRequestIdRef.current += 1
     setChatMessages([
       buildMessage({
         authorId: 'system',
@@ -460,7 +584,29 @@ export default function P2PInterviewPage() {
   const handleCodeChange = (event) => {
     const nextCode = event.target.value
     setCode(nextCode)
+    setCodeByLanguage((currentCodeByLanguage) => ({
+      ...currentCodeByLanguage,
+      [executionLanguage]: nextCode,
+    }))
     sendPeerEvent('code-update', {
+      language: executionLanguage,
+      code: nextCode,
+    })
+  }
+
+  const handleExecutionLanguageChange = (event) => {
+    const nextLanguage = normalizeExecutionLanguage(event.target.value)
+    const nextCode = codeByLanguage[nextLanguage] || getExecutionStarterCode(nextLanguage)
+
+    setExecutionLanguage(nextLanguage)
+    setCode(nextCode)
+    setExecutionJobId('')
+    setExecutionState('idle')
+    setExecutionResult(null)
+    setExecutionError('')
+
+    sendPeerEvent('code-update', {
+      language: nextLanguage,
       code: nextCode,
     })
   }
@@ -513,19 +659,93 @@ export default function P2PInterviewPage() {
   }
 
   const handleResetWorkspace = () => {
+    const nextCodeByLanguage = createExecutionStarterCodeByLanguage()
+    const nextCode = nextCodeByLanguage[executionLanguage] || getExecutionStarterCode(executionLanguage)
+
     setProblemTitle(defaultProblemTitle)
     setProblemBody(defaultProblemBody)
-    setCode(mockStarterCode)
+    setCodeByLanguage(nextCodeByLanguage)
+    setCode(nextCode)
+    setExecutionJobId('')
+    setExecutionState('idle')
+    setExecutionResult(null)
+    setExecutionError('')
+    executionRequestIdRef.current += 1
 
     sendPeerEvent('session-sync', {
       problemTitle: defaultProblemTitle,
       problemBody: defaultProblemBody,
-      code: mockStarterCode,
+      language: executionLanguage,
+      code: nextCode,
+      codeSnapshots: nextCodeByLanguage,
       chatMessages,
     })
   }
 
+  const handleRunCode = async () => {
+    if (!code.trim()) {
+      setExecutionState('failed')
+      setExecutionResult(null)
+      setExecutionError('Write some code before running it.')
+      return
+    }
+
+    const requestId = executionRequestIdRef.current + 1
+    executionRequestIdRef.current = requestId
+
+    setExecutionState('queueing')
+    setExecutionError('')
+    setExecutionResult(null)
+    setExecutionJobId('')
+
+    try {
+      const queuedJob = await createExecutionJob({
+        language: executionLanguage,
+        sourceCode: code,
+        stdin: executionInput,
+      })
+
+      if (executionRequestIdRef.current !== requestId) {
+        return
+      }
+
+      setExecutionJobId(queuedJob.jobId)
+      setExecutionState('queued')
+
+      const resolvedJob = await pollExecutionJob(queuedJob.jobId, {
+        timeoutMs: EXECUTION_POLL_TIMEOUT,
+        onUpdate: (job) => {
+          if (executionRequestIdRef.current !== requestId) {
+            return
+          }
+
+          setExecutionState(job.state || 'queued')
+        },
+      })
+
+      if (executionRequestIdRef.current !== requestId) {
+        return
+      }
+
+      setExecutionState(resolvedJob.state || 'completed')
+      setExecutionResult(resolvedJob.result ?? null)
+
+      if (!resolvedJob.result && resolvedJob.state === 'failed') {
+        setExecutionError('Execution failed before the worker returned a result.')
+      }
+    } catch (runError) {
+      if (executionRequestIdRef.current !== requestId) {
+        return
+      }
+
+      setExecutionState('failed')
+      setExecutionResult(null)
+      setExecutionError(runError.message || 'Unable to run code right now.')
+    }
+  }
+
   const handleLeaveSession = () => {
+    executionRequestIdRef.current += 1
     sendPeerEvent('session-ended', {
       reason: `${displayName} ended the session.`,
     })
@@ -804,7 +1024,29 @@ export default function P2PInterviewPage() {
               </div>
 
               <div className="nav-links">
-                <span className="session-pill">JavaScript</span>
+                <label className="p2p-language-picker">
+                  <span className="p2p-language-label">Language</span>
+                  <select
+                    className="p2p-language-select"
+                    value={executionLanguage}
+                    onChange={handleExecutionLanguageChange}
+                    disabled={isExecutionBusy}
+                  >
+                    {EXECUTION_LANGUAGE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={handleRunCode}
+                  disabled={isExecutionBusy}
+                >
+                  {isExecutionBusy ? 'Running...' : 'Run Code'}
+                </button>
                 <button
                   type="button"
                   className="btn btn-ghost"
@@ -826,6 +1068,73 @@ export default function P2PInterviewPage() {
             </div>
 
             <div className="panel-body stack">
+              <div className="challenge-box p2p-run-shell">
+                <div className="p2p-run-header">
+                  <div>
+                    <strong>Sandbox Output</strong>
+                    <p className="prompt-copy">
+                      Submit the current {selectedLanguageLabel} solution to the backend execution worker.
+                    </p>
+                  </div>
+                  <span className={`session-pill p2p-run-pill ${executionState === 'failed' ? 'is-error' : ''}`}>
+                    {executionStateLabel}
+                  </span>
+                </div>
+
+                <label className="p2p-field">
+                  <span>stdin</span>
+                  <textarea
+                    className="p2p-stdin-textarea"
+                    value={executionInput}
+                    onChange={(event) => setExecutionInput(event.target.value)}
+                    placeholder="Optional standard input passed to the program"
+                  />
+                </label>
+
+                {executionJobId ? (
+                  <div className="p2p-run-meta">Job ID: {executionJobId}</div>
+                ) : null}
+
+                {executionError ? (
+                  <div className="p2p-run-error">{executionError}</div>
+                ) : null}
+
+                {executionResult ? (
+                  <div className="p2p-run-results">
+                    <div className="p2p-run-summary">
+                      <span className="session-pill">{executionOutcomeLabel}</span>
+                      <span className="session-pill">{selectedLanguageLabel}</span>
+                      <span className="session-pill">{executionResult.durationMs ?? 0} ms</span>
+                      {executionResult.exitCode !== null && executionResult.exitCode !== undefined ? (
+                        <span className="session-pill">Exit {executionResult.exitCode}</span>
+                      ) : null}
+                    </div>
+
+                    {isExecutionOutputEmpty ? (
+                      <div className="p2p-run-note">
+                        The program finished successfully, but it did not print anything. This runner only shows
+                        stdout/stderr, so function-only solutions need a small `console.log`/`print` wrapper to
+                        produce visible output.
+                      </div>
+                    ) : null}
+
+                    <div className="p2p-terminal">
+                      <strong>stdout</strong>
+                      <pre>{executionResult.stdout || '(empty)'}</pre>
+                    </div>
+
+                    <div className="p2p-terminal">
+                      <strong>stderr</strong>
+                      <pre>{executionResult.stderr || '(empty)'}</pre>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="prompt-copy">
+                    No sandbox output yet. Run the editor contents to surface compilation errors, runtime errors, or program output.
+                  </p>
+                )}
+              </div>
+
               <div className="challenge-box">
                 <strong>Interview flow</strong>
                 <p className="prompt-copy">
