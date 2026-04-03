@@ -1,4 +1,4 @@
-const DEFAULT_API_PORT = '8000'
+const DEFAULT_API_PORT = '8002'
 
 function getBrowserHostname() {
   if (typeof window === 'undefined') {

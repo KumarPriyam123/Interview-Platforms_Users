@@ -77,12 +77,15 @@ function Ensure-RedisContainer {
 }
 
 function Assert-DockerDaemonReady {
-    try {
-        docker info | Out-Null
-    } catch {
-        Write-Host "[ERROR] Docker is installed but the Docker daemon is not running." -ForegroundColor Red
-        Write-Host "        Start Docker Desktop, wait until it shows as running, then rerun this command." -ForegroundColor Red
-        Write-Host "        If you already have Redis running outside Docker, rerun with -SkipRedis." -ForegroundColor Red
+    Write-Host "  Checking Docker daemon..." -ForegroundColor DarkGray
+    $job = Start-Job -ScriptBlock { docker info 2>&1 | Out-Null }
+    $completed = Wait-Job $job -Timeout 10
+    Remove-Job $job -Force
+
+    if (-not $completed -or $job.State -ne 'Completed') {
+        Write-Host "[ERROR] Docker daemon is not responding (timed out after 10s)." -ForegroundColor Red
+        Write-Host "        Start Docker Desktop and wait until it shows 'Engine running', then retry." -ForegroundColor Red
+        Write-Host "        Or rerun with -SkipRedis if you already have Redis running on port $RedisPort." -ForegroundColor Red
         exit 1
     }
 }
@@ -94,19 +97,23 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
 if (-not (Test-Path "$BackendDir\node_modules")) {
-    Write-Host "[ERROR] Backend dependencies are missing. Run npm install in Backend first." -ForegroundColor Red
+    Write-Host "[ERROR] Backend dependencies are missing. Run 'npm install' inside the Backend folder first." -ForegroundColor Red
     exit 1
 }
+Write-Host "[OK] Backend node_modules found." -ForegroundColor Green
 
 if (-not (Test-CommandAvailable 'node')) {
     Write-Host "[ERROR] Node.js is not installed or not on PATH." -ForegroundColor Red
     exit 1
 }
+Write-Host "[OK] Node.js found: $(node --version)" -ForegroundColor Green
 
 if (-not (Test-CommandAvailable 'npm.cmd')) {
-    Write-Host "[ERROR] npm.cmd is not installed or not on PATH." -ForegroundColor Red
+    Write-Host "[ERROR] npm is not installed or not on PATH." -ForegroundColor Red
     exit 1
 }
+Write-Host "[OK] npm found." -ForegroundColor Green
+Write-Host ""
 
 if (-not $SkipRedis) {
     if (-not (Test-CommandAvailable 'docker')) {
@@ -116,7 +123,8 @@ if (-not $SkipRedis) {
     }
 
     Assert-DockerDaemonReady
-
+    Write-Host "[OK] Docker daemon is running." -ForegroundColor Green
+    Write-Host ""
     Write-Host "[Redis]" -ForegroundColor Yellow
     Ensure-RedisContainer -ContainerName $RedisContainerName -Image $RedisImage -HostPort $RedisPort
     Write-Host ""
@@ -126,8 +134,8 @@ $backendCommand = if ($Dev) { 'npm.cmd run dev' } else { 'npm.cmd start' }
 $workerCommand = if ($Dev) { 'npm.cmd run dev:worker' } else { 'npm.cmd run worker' }
 
 Write-Host "[Backend API]" -ForegroundColor Yellow
-Write-Host "  Starting backend on http://localhost:8000 ..." -ForegroundColor DarkGray
-Start-ServiceWindow -Title 'Job Saarthi Backend (8000)' -WorkingDirectory $BackendDir -Command $backendCommand
+Write-Host "  Starting backend on http://localhost:8002 ..." -ForegroundColor DarkGray
+Start-ServiceWindow -Title 'Job Saarthi Backend (8002)' -WorkingDirectory $BackendDir -Command $backendCommand
 Write-Host "  Backend window launched." -ForegroundColor Green
 Write-Host ""
 
@@ -141,7 +149,7 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host " Stack Started" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  Backend health:    http://localhost:8000/health" -ForegroundColor White
+Write-Host "  Backend health:    http://localhost:8002/health" -ForegroundColor White
 Write-Host "  Redis container:   $RedisContainerName" -ForegroundColor White
 Write-Host "  Mode:              $(if ($Dev) { 'development' } else { 'production scripts' })" -ForegroundColor White
 Write-Host ""

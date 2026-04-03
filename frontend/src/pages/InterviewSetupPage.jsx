@@ -43,7 +43,7 @@ function InterviewSetupPage() {
     try {
       const response = await uploadResume(resume, trimmedRole, trimmedCompany, trimmedEmail)
       const { session_id } = response.data
-      navigate(`/live-interview/${session_id}`)
+      navigate(`/ai-interview/${session_id}`)
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to start interview')
     } finally {

@@ -338,20 +338,56 @@ export const mockChatMessages = [
   {
     id: 'c1',
     sender: 'interviewer',
-    text: 'Can you explain your thought process for the recursive approach?',
-    time: '10:24 AM',
+    text: "Let's start with a classic. Can you walk me through your thought process for inverting a binary tree?",
+    time: '10:42 AM',
   },
   {
     id: 'c2',
     sender: 'me',
-    text: 'I swap left/right pointers per node, then recurse on both subtrees.',
-    time: '10:25 AM',
+    text: "Sure. I think I should use a recursive approach. I'll need to swap the left and right children for every node.",
+    time: '10:43 AM',
   },
   {
     id: 'c3',
     sender: 'interviewer',
-    text: 'Good. What is the time and space complexity here?',
-    time: '10:26 AM',
+    text: "That's a solid idea. What is the base case for your recursion?",
+    time: '10:43 AM',
+  },
+  {
+    id: 'c4',
+    sender: 'me',
+    text: 'The base case is when the node is null — we just return null and stop recursing.',
+    time: '10:44 AM',
+  },
+  {
+    id: 'c5',
+    sender: 'interviewer',
+    text: 'Good. What is the time and space complexity of your solution?',
+    time: '10:45 AM',
+  },
+]
+
+export const mockTestCases = [
+  {
+    id: 'tc1',
+    name: 'Case 1: Standard Tree',
+    input: '[4,2,7,1,3,6,9]',
+    expected: '[4,7,2,9,6,3,1]',
+    passed: true,
+  },
+  {
+    id: 'tc2',
+    name: 'Case 2: Empty Tree',
+    input: '[]',
+    expected: '[]',
+    passed: true,
+  },
+  {
+    id: 'tc3',
+    name: 'Case 3: Single Node',
+    input: '[1,2]',
+    expected: '[1,null,2]',
+    passed: true,
   },
 ]
 

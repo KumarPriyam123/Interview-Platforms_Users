@@ -11,7 +11,16 @@ export const createApp = () => {
 
   app.use(
     cors({
-      origin: process.env.FRONTEND_URL || "http://localhost:5174",
+      origin: (origin, callback) => {
+        // Allow requests with no origin (mobile apps, curl, Postman)
+        if (!origin) return callback(null, true);
+        // Allow any localhost port in development
+        if (/^http:\/\/localhost:\d+$/.test(origin)) return callback(null, true);
+        // Allow configured frontend URL
+        const allowed = process.env.FRONTEND_URL || "http://localhost:5174";
+        if (origin === allowed) return callback(null, true);
+        callback(new Error(`CORS: origin ${origin} not allowed`));
+      },
       credentials: true,
     })
   );

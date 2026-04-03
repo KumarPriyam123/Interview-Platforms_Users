@@ -7,6 +7,7 @@ import morgan from 'morgan';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import codeExecutionRouter from './routes/codeExecution.routes.js';
+import interviewRouter from './routes/interview.routes.js';
 
 const app = express();
 
@@ -78,6 +79,7 @@ app.get('/health', (req, res) => {
 });
 
 app.use('/api/code-execution', codeExecutionRouter);
+app.use('/api/interviews', interviewRouter);
 
 app.use((req, res) => {
     res.status(404).json({

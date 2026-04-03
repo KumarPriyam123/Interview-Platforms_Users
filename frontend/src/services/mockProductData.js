@@ -13,7 +13,7 @@ export const dashboardQuickActions = [
     detailLabel: 'Difficulty',
     detailValue: 'Medium Difficulty',
     buttonLabel: 'Start AI Interview',
-    buttonTo: '/ai-interview',
+    buttonTo: '/interview-setup',
     tone: 'dark',
   },
   {
