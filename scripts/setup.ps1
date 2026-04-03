@@ -3,7 +3,9 @@ param(
     [switch]$SkipPython,
     [switch]$SkipNode,
     [switch]$SkipFrontend,
-    [switch]$SkipWebRTC
+    [switch]$SkipWebRTC,
+    [switch]$SkipAIInterview,
+    [switch]$SkipAIFrontend
 )
 
 $ErrorActionPreference = "Stop"
@@ -154,7 +156,54 @@ if (-not $SkipWebRTC) {
 }
 
 # =====================
-# 5. Environment Files
+# 5. AI Interview Service (Python)
+# =====================
+if (-not $SkipAIInterview) {
+    $StepNumber++
+    Write-Host "[$StepNumber] Setting up AI Interview Service (venv + dependencies)..." -ForegroundColor Yellow
+
+    $AIServiceDir = "$ProjectRoot\ai-interview-service"
+    $AIVenvDir = "$AIServiceDir\venv"
+
+    if (Test-Path "$AIVenvDir\Scripts\python.exe") {
+        Write-Host "  Virtual environment already exists. Updating dependencies..." -ForegroundColor DarkGray
+    } else {
+        Write-Host "  Creating virtual environment..." -ForegroundColor DarkGray
+        python -m venv "$AIVenvDir"
+    }
+
+    Write-Host "  Installing Python requirements..." -ForegroundColor DarkGray
+    & "$AIVenvDir\Scripts\pip" install -r "$AIServiceDir\requirements.txt" --quiet
+    Write-Host "  [DONE] AI Interview service ready" -ForegroundColor Green
+    Write-Host ""
+}
+
+# =====================
+# 6. AI Interview Frontend Dependencies
+# =====================
+if (-not $SkipAIFrontend) {
+    $StepNumber++
+    Write-Host "[$StepNumber] Installing AI Interview Frontend dependencies..." -ForegroundColor Yellow
+
+    $AIFrontendDir = "$ProjectRoot\frontend-interview"
+
+    if (Test-Path "$AIFrontendDir\node_modules") {
+        Write-Host "  node_modules exists. Running npm install to update..." -ForegroundColor DarkGray
+    } else {
+        Write-Host "  Installing npm packages..." -ForegroundColor DarkGray
+    }
+
+    Push-Location $AIFrontendDir
+    npm install --silent 2>&1 | Out-Null
+    Pop-Location
+    Write-Host "  [DONE] AI Interview frontend dependencies installed" -ForegroundColor Green
+    Write-Host ""
+}
+    Write-Host ""
+}
+
+# =====================
+# Environment Files
 # =====================
 $StepNumber++
 Write-Host "[$StepNumber] Setting up environment files..." -ForegroundColor Yellow
@@ -180,6 +229,18 @@ if (Test-Path $BackendEnvExample) {
         Write-Host "  Created .env from .env.example (backend)" -ForegroundColor DarkGray
     } else {
         Write-Host "  .env already exists (backend) - skipping" -ForegroundColor DarkGray
+    }
+}
+
+# AI Interview Service .env
+$AIEnvExample = "$ProjectRoot\ai-interview-service\.env.example"
+$AIEnv = "$ProjectRoot\ai-interview-service\.env"
+if (Test-Path $AIEnvExample) {
+    if (-not (Test-Path $AIEnv)) {
+        Copy-Item $AIEnvExample $AIEnv
+        Write-Host "  Created .env from .env.example (ai-interview-service)" -ForegroundColor DarkGray
+    } else {
+        Write-Host "  .env already exists (ai-interview-service) - skipping" -ForegroundColor DarkGray
     }
 }
 
@@ -214,6 +275,8 @@ if (-not $SkipPython)   { Write-Host "    [+] Python Backend   (venv + FastAPI p
 if (-not $SkipNode)     { Write-Host "    [+] Node.js Backend  (Express + dependencies)" -ForegroundColor Green }
 if (-not $SkipFrontend) { Write-Host "    [+] React Frontend   (Vite + dependencies)" -ForegroundColor Green }
 if (-not $SkipWebRTC)   { Write-Host "    [+] WebRTC Service   (Socket.io + PeerJS dependencies)" -ForegroundColor Green }
+if (-not $SkipAIInterview) { Write-Host "    [+] AI Interview Service (venv + FastAPI + LLM packages)" -ForegroundColor Green }
+if (-not $SkipAIFrontend)  { Write-Host "    [+] AI Interview Frontend (Vite + dependencies)" -ForegroundColor Green }
 Write-Host "    [+] Environment files (.env)" -ForegroundColor Green
 Write-Host "    [+] Data directories" -ForegroundColor Green
 Write-Host ""

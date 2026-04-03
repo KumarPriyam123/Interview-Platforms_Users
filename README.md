@@ -75,6 +75,82 @@ This starts:
 
 Use this when you only need the live peer interview flow.
 
+### 2b. Test P2P Between Two Laptops On The Same WiFi
+
+1. Start the frontend and WebRTC service on one laptop:
+
+```powershell
+npm run dev:p2p
+```
+
+2. Find that laptop's LAN IP:
+
+```powershell
+ipconfig
+```
+
+3. Open the app from both laptops with the host laptop's IP, not `localhost`:
+
+```text
+http://<HOST_LAN_IP>:5173/p2p-interview
+```
+
+4. Keep the signaling service reachable on the same host:
+
+```text
+http://<HOST_LAN_IP>:9000/health
+http://<HOST_LAN_IP>:9001/peerjs
+```
+
+5. If Windows Defender prompts for Node.js network access, allow it on the private network. If the second laptop still cannot connect, open TCP ports `5173`, `9000`, and `9001` on the host machine.
+
+The frontend now derives `VITE_SIGNALING_URL` and `VITE_PEERJS_URL` from the page hostname by default, so loading `http://192.168.x.x:5173` will automatically target `http://192.168.x.x:9000` and `http://192.168.x.x:9001`.
+
+### 2c. ICE, STUN, and TURN
+
+- Same WiFi often works with host candidates or public STUN only.
+- Different networks, VPNs, strict NAT, or corporate firewalls usually need TURN.
+- The signaling service exposes ICE config at `/api/ice-servers`; update [iceServers.js](/c:/Users/kumar/OneDrive/Desktop/Projects/Job Saarthi/webrtc-service/src/config/iceServers.js) or replace it with dynamic TURN credentials in production.
+- If STUN-only calls stay in `checking` or move to `failed`, add a TURN relay and verify that relay candidates are being gathered.
+
+Example development ICE config:
+
+```js
+const iceServers = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  {
+    urls: 'turn:turn.example.com:3478',
+    username: 'turn-user',
+    credential: 'turn-password',
+  },
+]
+```
+
+### 2d. Start The Code Execution Stack
+
+If you only need the backend execution API used by the collaborative editor, run:
+
+```powershell
+npm run start:code-execution
+```
+
+For auto-reload during development:
+
+```powershell
+npm run start:code-execution:dev
+```
+
+This starts:
+- Redis in Docker on `localhost:6379`
+- The Node backend on `http://localhost:8000`
+- The BullMQ worker in a separate PowerShell window
+
+If Redis is already running elsewhere, you can call the script directly with:
+
+```powershell
+.\scripts\start_code_execution_stack.ps1 -SkipRedis
+```
+
 **Skip flags** (optional):
 ```powershell
 .\scripts\start_services.ps1 -SkipFrontend    # Run backends only

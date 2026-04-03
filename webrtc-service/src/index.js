@@ -14,8 +14,26 @@ import iceServers from './config/iceServers.js';
 // ─── Config ──────────────────────────────────────────────────────
 const PORT = parseInt(process.env.SIGNALING_PORT) || 9000;
 const PEER_PORT = parseInt(process.env.PEERJS_PORT) || 9001;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+const SIGNALING_HOST = process.env.SIGNALING_HOST || '0.0.0.0';
+const PEER_HOST = process.env.PEERJS_HOST || SIGNALING_HOST;
 const PEERJS_PATH = process.env.PEERJS_PATH || '/peerjs';
+const FRONTEND_URLS = [
+    process.env.FRONTEND_URL,
+    ...(process.env.FRONTEND_URLS || '').split(','),
+]
+    .map((value) => value?.trim())
+    .filter(Boolean);
+
+const DEV_ALLOWED_ORIGIN_PATTERNS = [
+    /^https?:\/\/localhost(:\d+)?$/i,
+    /^https?:\/\/127\.0\.0\.1(:\d+)?$/i,
+    /^https?:\/\/(?:10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2})(:\d+)?$/i,
+    /^https?:\/\/[a-z0-9-]+(?:\.local)?(:\d+)?$/i,
+];
+
+function isDevOriginAllowed(origin) {
+    return DEV_ALLOWED_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin));
+}
 
 // ─── Main Express + HTTP Server (Socket.io) ─────────────────────
 const app = express();
@@ -25,13 +43,13 @@ const corsOptions = {
     origin: (origin, callback) => {
         // Allow requests with no origin (curl, Postman, etc.)
         if (!origin) return callback(null, true);
-        // In development, allow any localhost port
-        if (process.env.NODE_ENV !== 'production' && /^https?:\/\/localhost(:\d+)?$/.test(origin)) {
+        // In development, allow localhost and same-LAN origins.
+        if (process.env.NODE_ENV !== 'production' && isDevOriginAllowed(origin)) {
             return callback(null, true);
         }
-        // In production, check against FRONTEND_URL
-        if (origin === FRONTEND_URL) return callback(null, true);
-        callback(new Error('CORS not allowed'));
+        // In production, use an explicit allow-list.
+        if (FRONTEND_URLS.includes(origin)) return callback(null, true);
+        callback(new Error(`CORS not allowed for origin ${origin}`));
     },
     credentials: true,
 };
@@ -159,16 +177,17 @@ async function start() {
     });
 
     // ─── Start ───────────────────────────────────────────────────
-    server.listen(PORT, () => {
+    server.listen(PORT, SIGNALING_HOST, () => {
         console.log(`\n🎥 WebRTC Signaling Service`);
-        console.log(`   Socket.io:  ws://localhost:${PORT}`);
-        console.log(`   Health:     http://localhost:${PORT}/health`);
+        console.log(`   Socket.io:  ws://${SIGNALING_HOST}:${PORT}`);
+        console.log(`   Health:     http://${SIGNALING_HOST}:${PORT}/health`);
         console.log(`   Redis:      ${useRedis ? 'connected' : 'off (in-memory)'}`);
         console.log(`   Env:        ${process.env.NODE_ENV}`);
+        console.log(`   Origins:    ${FRONTEND_URLS.length > 0 ? FRONTEND_URLS.join(', ') : 'dev LAN origins allowed'}`);
     });
 
-    peerHttpServer.listen(PEER_PORT, () => {
-        console.log(`   PeerJS:     http://localhost:${PEER_PORT}${PEERJS_PATH}`);
+    peerHttpServer.listen(PEER_PORT, PEER_HOST, () => {
+        console.log(`   PeerJS:     http://${PEER_HOST}:${PEER_PORT}${PEERJS_PATH}`);
         console.log('');
     });
 

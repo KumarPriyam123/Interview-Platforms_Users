@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { io } from 'socket.io-client'
 import Peer from 'peerjs'
+import { PEERJS_URL, SIGNALING_URL } from '../utils/realtimeConfig'
 
-const SIGNALING_URL = import.meta.env.VITE_SIGNALING_URL || 'http://localhost:9000'
-const PEERJS_URL = import.meta.env.VITE_PEERJS_URL || 'http://localhost:9001'
 const DEFAULT_REMOTE_MEDIA_STATE = { audio: true, video: true }
 const SERVICE_RETRY_DELAY = 3000
 
@@ -16,6 +15,15 @@ function getPeerConfig() {
     path: '/peerjs',
     secure: peerUrl.protocol === 'https:',
   }
+}
+
+function shouldInitiateConnection(localUserId, remoteUserId) {
+  if (!localUserId || !remoteUserId) {
+    return true
+  }
+
+  // Ensure only one side initiates outbound connections to reduce call glare.
+  return localUserId.localeCompare(remoteUserId) > 0
 }
 
 export function useWebRTC(roomId, userId, displayName = userId) {
@@ -294,14 +302,22 @@ export function useWebRTC(roomId, userId, displayName = userId) {
 
           if (remoteParticipant?.userId) {
             setRemoteUserId(remoteParticipant.displayName || remoteParticipant.userId)
+
+            if (remoteParticipant.peerId && shouldInitiateConnection(userId, remoteParticipant.userId)) {
+              callPeer(remoteParticipant.peerId, stream)
+              connectDataChannel(remoteParticipant.peerId)
+            }
           }
         })
 
         socket.on('user-connected', ({ peerId: remotePeerId, userId: remoteUid, displayName: remoteDisplayName, participants = [] }) => {
           setRemoteUserId(remoteDisplayName || remoteUid)
           setParticipantCount(Math.max(participants.length, 2))
-          callPeer(remotePeerId, stream)
-          connectDataChannel(remotePeerId)
+
+          if (remotePeerId && shouldInitiateConnection(userId, remoteUid)) {
+            callPeer(remotePeerId, stream)
+            connectDataChannel(remotePeerId)
+          }
         })
 
         socket.on('user-disconnected', ({ userId: remoteUid, displayName: remoteDisplayName }) => {

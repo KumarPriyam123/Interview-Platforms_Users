@@ -6,14 +6,21 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js",
+    "dev": "npx nodemon src/index.js",
+    "worker": "node src/workers/codeExecution.worker.js",
+    "dev:worker": "npx nodemon src/workers/codeExecution.worker.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["interview", "jobs", "backend"],
+  "keywords": [
+    "interview",
+    "jobs",
+    "backend"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "bcrypt": "^5.1.1",
+    "bullmq": "^5.71.0",
     "compression": "^1.7.4",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
@@ -21,10 +28,12 @@
     "express": "^5.2.1",
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.0.0",
+    "ioredis": "^5.10.1",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.9.3",
     "morgan": "^1.10.0",
-    "pg": "^8.13.1"
+    "pg": "^8.13.1",
+    "socket.io": "^4.8.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.11"

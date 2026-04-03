@@ -3,7 +3,8 @@ param(
     [switch]$SkipPython,
     [switch]$SkipNode,
     [switch]$SkipFrontend,
-    [switch]$SkipWebRTC
+    [switch]$SkipWebRTC,
+    [switch]$SkipAIInterview
 )
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -48,6 +49,15 @@ if (-not $SkipWebRTC) {
     }
 }
 
+if (-not $SkipAIInterview) {
+    if (-not (Test-Path "$ProjectRoot\ai-interview-service\venv\Scripts\python.exe")) {
+        Write-Host "[WARNING] Python venv not found at ai-interview-service\venv" -ForegroundColor Red
+        $SetupNeeded = $true
+    }
+}
+
+
+
 if ($SetupNeeded) {
     Write-Host ""
     Write-Host "Please run setup first:  .\scripts\setup.ps1" -ForegroundColor Yellow
@@ -68,21 +78,12 @@ if (-not $SkipPython) {
     # Resume Parser Service (Port 8001)
     Write-Host "  Starting Resume Parser Service (Port 8001)..." -ForegroundColor DarkGray
     Start-Process powershell -ArgumentList "-NoExit", "-Command", `
-        "Set-Title 'Resume Parser (8001)' 2>`$null; " + `
-        "`$host.UI.RawUI.WindowTitle = 'Resume Parser (8001)'; " + `
-        "cd '$ProjectRoot\resume-profile-service'; " + `
-        ".\venv\Scripts\activate; " + `
-        "cd src\services\parsing; " + `
-        "uvicorn main:app --host 0.0.0.0 --port 8001 --reload"
+        "Set-Title 'Resume Parser (8001)' 2>`$null; `$host.UI.RawUI.WindowTitle = 'Resume Parser (8001)'; cd '$ProjectRoot\resume-profile-service'; .\venv\Scripts\activate; cd src\services\parsing; uvicorn main:app --host 0.0.0.0 --port 8001 --reload"
 
     # Profile Matching Service (Port 8002)
     Write-Host "  Starting Profile Matching Service (Port 8002)..." -ForegroundColor DarkGray
     Start-Process powershell -ArgumentList "-NoExit", "-Command", `
-        "`$host.UI.RawUI.WindowTitle = 'Profile Matching (8002)'; " + `
-        "cd '$ProjectRoot\resume-profile-service'; " + `
-        ".\venv\Scripts\activate; " + `
-        "cd src\services\matching; " + `
-        "uvicorn main:app --host 0.0.0.0 --port 8002 --reload"
+        "`$host.UI.RawUI.WindowTitle = 'Profile Matching (8002)'; cd '$ProjectRoot\resume-profile-service'; .\venv\Scripts\activate; cd src\services\matching; uvicorn main:app --host 0.0.0.0 --port 8002 --reload"
 
     # Wait for microservices to initialize
     Write-Host "  Waiting for microservices to start..." -ForegroundColor DarkGray
@@ -91,11 +92,7 @@ if (-not $SkipPython) {
     # API Gateway (Port 8000)
     Write-Host "  Starting API Gateway (Port 8000)..." -ForegroundColor DarkGray
     Start-Process powershell -ArgumentList "-NoExit", "-Command", `
-        "`$host.UI.RawUI.WindowTitle = 'API Gateway (8000)'; " + `
-        "cd '$ProjectRoot\resume-profile-service'; " + `
-        ".\venv\Scripts\activate; " + `
-        "cd src\api; " + `
-        "uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+        "`$host.UI.RawUI.WindowTitle = 'API Gateway (8000)'; cd '$ProjectRoot\resume-profile-service'; .\venv\Scripts\activate; cd src\api; uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
 
     Write-Host "  [OK] Python services started" -ForegroundColor Green
     Write-Host ""
@@ -109,10 +106,7 @@ if (-not $SkipNode) {
     Write-Host "  Starting Express Server (Port 3000)..." -ForegroundColor DarkGray
 
     Start-Process powershell -ArgumentList "-NoExit", "-Command", `
-        "`$host.UI.RawUI.WindowTitle = 'Node.js Backend (3000)'; " + `
-        "cd '$ProjectRoot\Backend'; " + `
-        "`$env:PORT=3000; " + `
-        "npm.cmd run dev"
+        "`$host.UI.RawUI.WindowTitle = 'Node.js Backend (3000)'; cd '$ProjectRoot\Backend'; `$env:PORT=3000; npm.cmd run dev"
 
     Write-Host "  [OK] Node.js backend started" -ForegroundColor Green
     Write-Host ""
@@ -126,9 +120,7 @@ if (-not $SkipWebRTC) {
     Write-Host "  Starting Socket.io + PeerJS service (Ports 9000 / 9001)..." -ForegroundColor DarkGray
 
     Start-Process powershell -ArgumentList "-NoExit", "-Command", `
-        "`$host.UI.RawUI.WindowTitle = 'WebRTC Signaling (9000/9001)'; " + `
-        "cd '$ProjectRoot\webrtc-service'; " + `
-        "npm.cmd start"
+        "`$host.UI.RawUI.WindowTitle = 'WebRTC Signaling (9000/9001)'; cd '$ProjectRoot\webrtc-service'; npm.cmd start"
 
     Write-Host "  [OK] WebRTC signaling service started" -ForegroundColor Green
     Write-Host ""
@@ -142,13 +134,27 @@ if (-not $SkipFrontend) {
     Write-Host "  Starting Vite Dev Server (Port 5173)..." -ForegroundColor DarkGray
 
     Start-Process powershell -ArgumentList "-NoExit", "-Command", `
-        "`$host.UI.RawUI.WindowTitle = 'Frontend (5173)'; " + `
-        "cd '$ProjectRoot\frontend'; " + `
-        "npm.cmd run dev"
+        "`$host.UI.RawUI.WindowTitle = 'Frontend (5173)'; cd '$ProjectRoot\frontend'; npm.cmd run dev"
 
     Write-Host "  [OK] Frontend started" -ForegroundColor Green
     Write-Host ""
 }
+
+# =====================
+# 4. AI Interview Service (Python)
+# =====================
+if (-not $SkipAIInterview) {
+    Write-Host "[AI Interview Service]" -ForegroundColor Yellow
+    Write-Host "  Starting AI Interview Backend (Port 8003)..." -ForegroundColor DarkGray
+
+    Start-Process powershell -ArgumentList "-NoExit", "-Command", `
+        "`$host.UI.RawUI.WindowTitle = 'AI Interview Backend (8003)'; cd '$ProjectRoot\ai-interview-service'; .\venv\Scripts\activate; python run.py"
+
+    Write-Host "  [OK] AI Interview backend started" -ForegroundColor Green
+    Write-Host ""
+}
+
+
 
 # =====================
 # Summary
@@ -174,13 +180,19 @@ if (-not $SkipWebRTC) {
     Write-Host "    WebRTC Health:          http://localhost:9000/health" -ForegroundColor White
     Write-Host "    PeerJS Endpoint:        http://localhost:9001/peerjs" -ForegroundColor White
 }
+if (-not $SkipAIInterview) {
+    Write-Host "    AI Interview Backend:   http://localhost:8003/docs" -ForegroundColor White
+}
+
 
 Write-Host ""
 Write-Host "  Flags:" -ForegroundColor DarkGray
-Write-Host "    -SkipPython    Skip Python microservices" -ForegroundColor DarkGray
-Write-Host "    -SkipNode      Skip Node.js backend" -ForegroundColor DarkGray
-Write-Host "    -SkipFrontend  Skip React frontend" -ForegroundColor DarkGray
-Write-Host "    -SkipWebRTC    Skip WebRTC signaling service" -ForegroundColor DarkGray
+Write-Host "    -SkipPython       Skip Python microservices (resume/profile)" -ForegroundColor DarkGray
+Write-Host "    -SkipNode         Skip Node.js backend" -ForegroundColor DarkGray
+Write-Host "    -SkipFrontend     Skip React frontend" -ForegroundColor DarkGray
+Write-Host "    -SkipWebRTC       Skip WebRTC signaling service" -ForegroundColor DarkGray
+Write-Host "    -SkipAIInterview  Skip AI Interview backend" -ForegroundColor DarkGray
+
 Write-Host ""
 Write-Host "  To stop: close each service's PowerShell window (or Ctrl+C)" -ForegroundColor DarkGray
 Write-Host ""
