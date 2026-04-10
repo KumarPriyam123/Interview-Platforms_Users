@@ -10,12 +10,15 @@ export const apiClient = axios.create({
   timeout: 120000,
 })
 
-export const uploadResume = (file, role, company, email) => {
+export const uploadResume = (file, role, company, email, { difficulty, interviewType, experienceLevel } = {}) => {
   const formData = new FormData()
   formData.append('file', file)
   formData.append('role', role)
   formData.append('company', company)
   formData.append('email', email)
+  if (difficulty) formData.append('difficulty', difficulty)
+  if (interviewType) formData.append('interviewType', interviewType)
+  if (experienceLevel) formData.append('experienceLevel', experienceLevel)
 
   return apiClient.post('/api/interviews/start', formData, {
     headers: {
@@ -53,9 +56,6 @@ export const getInterviewReport = (sessionId) =>
 
 export const endInterview = (sessionId) =>
   apiClient.post(`/api/interviews/${sessionId}/end`, {})
-
-export const runCode = (language, code, testCases, mode = 'run') =>
-  apiClient.post('/api/interviews/code/run', { language, code, testCases, mode })
 
 export const cleanQuestionText = (question, title = '') =>
   apiClient.post('/api/interviews/clean-question', { question, title })

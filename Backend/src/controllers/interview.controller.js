@@ -24,8 +24,7 @@ import {
   updateQuestionIndex,
   updateSessionSections,
 } from "../services/interview.service.js";
-import { runCode } from "../services/judgeExecution.service.js";
-import { storeInterviewData } from "../services/rag.service.js";
+
 import { extractTextFromBuffer } from "../utils/resumeExtractor.js";
 
 const resolveActiveCounterIndex = (question, requestedIndex, requestedQuestionText) => {
@@ -65,7 +64,7 @@ const resolveActiveCounterIndex = (question, requestedIndex, requestedQuestionTe
 
 export const startInterview = async (req, res, next) => {
   try {
-    const { role, company, email } = req.body;
+    const { role, company, email, difficulty, interviewType, experienceLevel } = req.body;
     const file = req.file;
 
     if (!file || !role || !company || !email) {
@@ -76,11 +75,26 @@ export const startInterview = async (req, res, next) => {
     const resumeText = await extractTextFromBuffer(file.buffer, file.mimetype);
     const resumeData = await extractSkillsFromResume(resumeText);
 
+    console.log("[startInterview] Extracted resume data:", {
+      skills: resumeData.technical_skills,
+      experience_years: resumeData.experience_years,
+      education: resumeData.education,
+      projectCount: resumeData.projects?.length || 0,
+    });
+
+    // Override experience years if provided from form
+    if (experienceLevel) {
+      const levelMap = { junior: 1, mid: 3, senior: 7, lead: 10 };
+      if (levelMap[experienceLevel] !== undefined) {
+        resumeData.experience_years = resumeData.experience_years || levelMap[experienceLevel];
+      }
+    }
+
     // Create session
     const session = await createSession({ email, company, role, resumeText, resumeData });
 
     // Generate ALL questions at once in sections
-    const sections = await generateAllQuestions({ resumeData, role, company });
+    const sections = await generateAllQuestions({ resumeData, role, company, difficulty, interviewType });
 
     // Count total questions
     const totalQuestions = sections.reduce((sum, s) => sum + (s.questions || []).length, 0);
@@ -230,24 +244,50 @@ export const answerQuestion = async (req, res, next) => {
       return res.status(400).json({ detail: "No active question" });
     }
 
+    // For coding questions, truncate the code for LLM evaluation to avoid token limits
+    const isCodingQuestion = question.type === "coding";
+    const answerForEval = isCodingQuestion && answer.length > 4000
+      ? answer.slice(0, 4000) + "\n// ... (code truncated for evaluation)"
+      : answer;
+
     // Get conversation history for context
     const conversationHistory = await getConversationHistory(sessionId);
 
-    // Add user answer to conversation history
+    // Add user answer to conversation history (truncated for coding)
+    const historyContent = isCodingQuestion && answer.length > 2000
+      ? answer.slice(0, 2000) + "\n// ... (truncated)"
+      : answer;
     await addToConversationHistory(sessionId, {
       role: "user",
-      content: answer,
+      content: historyContent,
       type: "answer",
     });
 
-    // Evaluate the answer
-    const evaluation = await evaluateAnswer({
-      question: question.questionText,
-      answer,
-      role: session.role,
-      company: session.company,
-      conversationHistory,
-    });
+    // Evaluate the answer with graceful fallback
+    let evaluation;
+    try {
+      evaluation = await evaluateAnswer({
+        question: question.questionText,
+        answer: answerForEval,
+        role: session.role,
+        company: session.company,
+        conversationHistory,
+      });
+    } catch (evalError) {
+      console.error("LLM evaluation failed for answer:", evalError?.message || evalError);
+      // Provide a graceful fallback instead of 500
+      evaluation = {
+        feedback: isCodingQuestion
+          ? "Your code submission has been recorded. The automated evaluation encountered an issue, but your answer is saved."
+          : "Your answer has been recorded. The evaluation service is temporarily unavailable.",
+        score: 5,
+        strengths: ["Answer submitted successfully"],
+        improvements: ["Evaluation will be updated when the service recovers"],
+        model_answer: "",
+        should_counter_question: false,
+        counter_question: null,
+      };
+    }
 
     // Save answer and evaluation
     await submitAnswer({
@@ -293,6 +333,7 @@ export const answerQuestion = async (req, res, next) => {
       counter_index: null,
     });
   } catch (error) {
+    console.error("answerQuestion error:", error?.message || error);
     return next(error);
   }
 };
@@ -562,25 +603,6 @@ export const getInterviewReport = async (req, res, next) => {
       skillAssessment: reportData.skill_assessment,
     });
 
-    // Store interview data in RAG for future retrieval
-    try {
-      await storeInterviewData({
-        sessionId,
-        role: session.role,
-        company: session.company,
-        questions: questions.map((q) => ({
-          questionText: q.questionText,
-          userAnswer: q.userAnswer,
-          score: q.score,
-          feedback: q.feedback,
-          sectionTitle: q.sectionTitle,
-          questionNumber: q.questionNumber,
-        })),
-      });
-    } catch (_error) {
-      // RAG storage is optional
-    }
-
     return res.json({
       ...reportData,
       questions: questions.map((q) => ({
@@ -618,29 +640,6 @@ export const stopInterview = async (req, res, next) => {
 
     return res.json({ status: "ended" });
   } catch (error) {
-    return next(error);
-  }
-};
-
-export const executeCodingAnswer = async (req, res, next) => {
-  try {
-    const { language, code, testCases, mode } = req.body;
-
-    if (!code || !String(code).trim()) {
-      return res.status(400).json({ detail: "Code is required" });
-    }
-
-    const result = await runCode({
-      language: String(language || "javascript").toLowerCase(),
-      code: String(code),
-      testCases,
-      mode: String(mode || "run").toLowerCase(),
-    });
-
-    return res.json(result);
-  } catch (error) {
-    error.statusCode = 502;
-    error.message = error.message || "Unable to run code right now. Please try again in a moment.";
     return next(error);
   }
 };

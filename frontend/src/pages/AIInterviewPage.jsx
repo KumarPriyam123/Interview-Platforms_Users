@@ -10,109 +10,23 @@ import {
   endInterview,
   cleanQuestionText,
 } from '../services/interviewApi'
-import { createExecutionJob, pollExecutionJob } from '../services/codeExecution'
-import Editor from '@monaco-editor/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { CodeWorkspace } from '../components/CodeWorkspace'
+import {
+  buildCodingStarter,
+  buildCodingTestCases,
+  createDefaultTestCases,
+  formatStructuredCaseInput,
+  formatExampleInput,
+} from '../components/CodeWorkspace'
 import '../styles/AIInterviewPage.css'
-
-const LANGUAGES = [
-  { id: 'javascript', label: 'JavaScript', icon: 'JS' },
-  { id: 'python', label: 'Python', icon: 'Py' },
-  { id: 'cpp', label: 'C++', icon: 'C+' },
-  { id: 'java', label: 'Java', icon: 'Jv' },
-]
 
 function formatTime(seconds) {
   const h = String(Math.floor(seconds / 3600)).padStart(2, '0')
   const m = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')
   const s = String(seconds % 60).padStart(2, '0')
   return `${h}:${m}:${s}`
-}
-
-// ── Helpers ──
-
-function buildStructuredStarterCode(_questionText, cppSignature = 'string solve(const string& rawInput)') {
-  return `#include <bits/stdc++.h>\nusing namespace std;\n\nclass Solution {\npublic:\n    ${cppSignature} {\n        // TODO: write your solution\n    }\n};\n`
-}
-
-function buildCodingStarter(language, questionText, codingMeta = null) {
-  if (codingMeta?.executionStyle === 'leetcode' && language === 'cpp') {
-    return { code: buildStructuredStarterCode(questionText, codingMeta.cppSignature || 'string solve(const string& rawInput)') }
-  }
-  if (language === 'python') {
-    return { code: `import sys\n\ndef solve(raw_input):\n    # TODO: write your solution\n    return raw_input.strip()\n\nif __name__ == "__main__":\n    data = sys.stdin.read()\n    print(solve(data))\n` }
-  }
-  if (language === 'java') {
-    return { code: `import java.io.BufferedReader;\nimport java.io.InputStreamReader;\n\npublic class Main {\n    public static String solve(String rawInput) {\n        // TODO: write your solution\n        return rawInput.trim();\n    }\n\n    public static void main(String[] args) throws Exception {\n        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));\n        StringBuilder sb = new StringBuilder();\n        String line;\n        while ((line = reader.readLine()) != null) {\n            if (sb.length() > 0) sb.append("\\n");\n            sb.append(line);\n        }\n        System.out.print(solve(sb.toString()));\n    }\n}\n` }
-  }
-  if (language === 'cpp') {
-    return { code: `#include <bits/stdc++.h>\nusing namespace std;\n\nstring solve(const string& rawInput) {\n    // TODO: write your solution\n    return rawInput;\n}\n\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    string input((istreambuf_iterator<char>(cin)), istreambuf_iterator<char>());\n    cout << solve(input);\n    return 0;\n}\n` }
-  }
-  return { code: `const fs = require('fs')\n\nfunction solve(rawInput) {\n  // TODO: write your solution\n  return rawInput.trim()\n}\n\nconst input = fs.readFileSync(0, 'utf8')\nprocess.stdout.write(String(solve(input)))\n` }
-}
-
-function formatStructuredCaseInput(testCase) {
-  const entries = Object.entries(testCase || {}).filter(([key]) => key !== 'output' && key !== 'hidden')
-  return JSON.stringify(Object.fromEntries(entries), null, 2)
-}
-
-function formatTestCaseDisplay(inputJson) {
-  try {
-    const parsed = typeof inputJson === 'string' ? JSON.parse(inputJson) : inputJson
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return Object.entries(parsed)
-        .filter(([k]) => k !== 'output' && k !== 'hidden')
-        .map(([k, v]) => ({ key: k, value: JSON.stringify(v) }))
-    }
-  } catch { /* not valid JSON */ }
-  return null
-}
-
-function formatExampleInput(input) {
-  if (!input) return ''
-  if (typeof input === 'string') {
-    try {
-      const parsed = JSON.parse(input)
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return Object.entries(parsed)
-          .filter(([k]) => k !== 'output' && k !== 'hidden')
-          .map(([k, v]) => `${k} = ${JSON.stringify(v)}`)
-          .join(', ')
-      }
-    } catch { /* not JSON */ }
-    return input
-  }
-  if (typeof input === 'object' && !Array.isArray(input)) {
-    return Object.entries(input)
-      .filter(([k]) => k !== 'output' && k !== 'hidden')
-      .map(([k, v]) => `${k} = ${JSON.stringify(v)}`)
-      .join(', ')
-  }
-  return JSON.stringify(input)
-}
-
-function createDefaultTestCases() {
-  return [
-    { id: 1, name: 'Case 1', input: '', expectedOutput: '', actualOutput: '', status: 'idle', passed: null },
-    { id: 2, name: 'Case 2', input: '', expectedOutput: '', actualOutput: '', status: 'idle', passed: null },
-  ]
-}
-
-function buildCodingTestCases(codingMeta) {
-  if (codingMeta?.executionStyle === 'leetcode' && Array.isArray(codingMeta.visibleTestCases) && codingMeta.visibleTestCases.length > 0) {
-    return codingMeta.visibleTestCases.map((tc, i) => ({
-      id: i + 1,
-      name: `Case ${i + 1}`,
-      input: formatStructuredCaseInput(tc),
-      expectedOutput: String(tc.output || ''),
-      actualOutput: '',
-      status: 'idle',
-      passed: null,
-      structured: true,
-    }))
-  }
-  return createDefaultTestCases()
 }
 
 // ── Component ──
@@ -151,12 +65,7 @@ export default function AIInterviewPage() {
 
   // Code state
   const [ideLanguage, setIdeLanguage] = useState('javascript')
-  const [activeCodeTab, setActiveCodeTab] = useState('testcase')
   const [testCases, setTestCases] = useState(createDefaultTestCases())
-  const [activeTestCaseIndex, setActiveTestCaseIndex] = useState(0)
-  const [caseResults, setCaseResults] = useState([])
-  const [runningCode, setRunningCode] = useState(false)
-  const [codeOutput, setCodeOutput] = useState('')
   const [cleanedQuestion, setCleanedQuestion] = useState(null)
   const [cleaningQuestion, setCleaningQuestion] = useState(false)
 
@@ -291,8 +200,7 @@ export default function AIInterviewPage() {
       setAnswer('')
       setFeedback(null)
       setCounterQuestion(null); setCounterAnswer(''); setCounterMessages([]); setActiveCounterIndex(null)
-      setCodeOutput(''); setTestCases(buildCodingTestCases(res.data.coding))
-      setCaseResults([]); setActiveTestCaseIndex(0); setActiveCodeTab('testcase')
+      setTestCases(buildCodingTestCases(res.data.coding))
       setCleanedQuestion(null); setCleaningQuestion(false)
       setDoubtMessages([]); setDoubtOpen(false)
       recognitionRef.current?.stop()
@@ -319,12 +227,14 @@ export default function AIInterviewPage() {
   }, [currentQ?.question_number])
 
   // ── Coding question setup ──
+  // Track the language that was used to generate the current starter code
+  const lastStarterLangRef = useRef(ideLanguage)
+
   useEffect(() => {
     if (currentQ?.type === 'coding') {
-      const nextLang = currentQ?.coding?.executionStyle === 'leetcode' ? 'cpp' : ideLanguage
-      if (currentQ?.coding?.executionStyle === 'leetcode') setIdeLanguage('cpp')
-      setAnswer(buildCodingStarter(nextLang, currentQ.question, currentQ.coding).code)
-      setCodeOutput('')
+      const nextLang = ideLanguage
+      lastStarterLangRef.current = nextLang
+      setAnswer(buildCodingStarter(nextLang, currentQ.question, currentQ.coding))
 
       const mongoTC = currentQ?.coding?.visibleTestCases
       const hasMongo = Array.isArray(mongoTC) && mongoTC.length > 0
@@ -337,7 +247,6 @@ export default function AIInterviewPage() {
       } else {
         setTestCases(buildCodingTestCases(currentQ.coding))
       }
-      setCaseResults([]); setActiveTestCaseIndex(0)
 
       setCleanedQuestion(null); setCleaningQuestion(true)
       cleanQuestionText(currentQ.question, currentQ?.coding?.source?.title || '')
@@ -361,6 +270,21 @@ export default function AIInterviewPage() {
         .finally(() => setCleaningQuestion(false))
     }
   }, [currentQ?.question_number, currentQ?.type])
+
+  // Regenerate starter code when language changes (any coding question)
+  const handleLanguageChange = useCallback((newLang) => {
+    setIdeLanguage(newLang)
+    if (currentQ?.type === 'coding') {
+      // Only regenerate if user hasn't modified the code beyond the starter template
+      const currentStarter = buildCodingStarter(lastStarterLangRef.current, currentQ.question, currentQ.coding)
+      if (answer === currentStarter || !answer.trim()) {
+        lastStarterLangRef.current = newLang
+        setAnswer(buildCodingStarter(newLang, currentQ.question, currentQ.coding))
+      } else {
+        lastStarterLangRef.current = newLang
+      }
+    }
+  }, [currentQ, answer])
 
   // ── Sound pulse decay ──
   useEffect(() => {
@@ -414,8 +338,7 @@ export default function AIInterviewPage() {
       setCurrentQ(res.data)
       setAnswer(''); setFeedback(null)
       setCounterQuestion(null); setCounterAnswer(''); setCounterMessages([]); setActiveCounterIndex(null)
-      setCodeOutput(''); setTestCases(buildCodingTestCases(res.data.coding))
-      setCaseResults([]); setActiveTestCaseIndex(0); setActiveCodeTab('testcase')
+      setTestCases(buildCodingTestCases(res.data.coding))
       setDoubtMessages([]); setDoubtOpen(false)
       await loadSidebar()
     } catch { setError('Failed to load next question') }
@@ -454,48 +377,6 @@ export default function AIInterviewPage() {
     finally { setSendingDoubt(false) }
   }
 
-  // ── Code execution ──
-  const handleRunCode = async () => {
-    if (!answer.trim() || runningCode) return
-    setRunningCode(true); setCodeOutput('Running...'); setActiveCodeTab('results')
-    try {
-      const lang = currentQ?.coding?.executionStyle === 'leetcode' ? 'cpp' : ideLanguage
-      const results = []
-      for (const tc of testCases) {
-        const stdin = tc.structured ? tc.input : (tc.input || '')
-        const job = await createExecutionJob({ language: lang, sourceCode: answer, stdin })
-        const result = await pollExecutionJob(job.jobId, { timeoutMs: 15000 })
-        const actualOutput = (result.stdout || '').trim()
-        const passed = actualOutput === (tc.expectedOutput || '').trim()
-        results.push({
-          status: result.state === 'completed' ? (result.stderr ? 'Runtime Error' : passed ? 'Accepted' : 'Wrong Answer') : 'Error',
-          actualOutput: result.stderr ? result.stderr.trim() : actualOutput,
-          passed: !result.stderr && passed,
-        })
-      }
-      setTestCases((prev) => prev.map((tc, i) => {
-        const r = results[i]
-        return r ? { ...tc, actualOutput: r.actualOutput || '', status: r.status || 'Unknown', passed: Boolean(r.passed) } : tc
-      }))
-      setCaseResults(results)
-      const passed = results.filter((r) => r.passed).length
-      setCodeOutput(`${passed}/${results.length} test cases passed`)
-    } catch (err) { setCodeOutput(err.message || 'Unable to run code.') }
-    finally { setRunningCode(false) }
-  }
-
-  const updateTestCaseField = (field, value) => {
-    setTestCases((prev) => prev.map((tc, i) => i === activeTestCaseIndex ? { ...tc, [field]: value } : tc))
-  }
-
-  const addTestCase = () => {
-    setTestCases((prev) => {
-      const next = [...prev, { id: Date.now(), name: `Case ${prev.length + 1}`, input: '', expectedOutput: '', actualOutput: '', status: 'idle', passed: null }]
-      setActiveTestCaseIndex(next.length - 1)
-      return next
-    })
-  }
-
   // ── Computed ──
   const isStructuredCoding = currentQ?.coding?.executionStyle === 'leetcode'
   const codingSource = currentQ?.coding?.source || null
@@ -504,8 +385,6 @@ export default function AIInterviewPage() {
   const ac = sections.reduce((s, sec) => s + sec.questions.filter((q) => q.answered).length, 0)
   const tc = sections.reduce((s, sec) => s + sec.questions.length, 0)
   const pct = tq > 0 ? ((cqn + (feedback ? 1 : 0)) / tq) * 100 : 0
-  const activeTestCase = testCases[activeTestCaseIndex] || testCases[0]
-  const passedCount = testCases.filter((t) => t.passed === true).length
 
   // ── Transcript messages from conversation ──
   const transcriptMessages = useMemo(() => {
@@ -779,176 +658,81 @@ export default function AIInterviewPage() {
 
           {/* ── Coding mode ── */}
           {currentQ?.type === 'coding' && (
-            <>
-              {/* Editor Header */}
-              <div className="ai-editor-header">
-                <div className="ai-editor-header-left">
-                  <div className={`ai-lang-icon ai-lang-icon--${ideLanguage === 'cpp' ? 'cpp' : ideLanguage === 'python' ? 'py' : ideLanguage === 'java' ? 'java' : 'js'}`}>
-                    {LANGUAGES.find((l) => l.id === ideLanguage)?.icon}
-                  </div>
-                  <select className="ai-lang-select" value={ideLanguage} onChange={(e) => setIdeLanguage(e.target.value)} disabled={isStructuredCoding}>
-                    {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
-                  </select>
+            <div className="ai-coding-split">
+              {/* Problem Panel */}
+              <div className="ai-problem-panel">
+                <div className="ai-problem-header">
+                  <h3 className="ai-problem-title">
+                    {codingSource?.questionId ? `${codingSource.questionId}. ` : ''}
+                    {cleanedQuestion?.title || codingSource?.title || 'Coding Challenge'}
+                  </h3>
+                  <span className={`ai-difficulty-badge ai-difficulty-badge--${currentQ.difficulty}`}>{currentQ.difficulty}</span>
                 </div>
-                <div className="ai-editor-header-right">
+                {codingSource?.tags?.length > 0 && (
+                  <div className="ai-problem-tags">{codingSource.tags.map((t) => <span key={t} className="ai-problem-tag">{t}</span>)}</div>
+                )}
+                {cleaningQuestion && <div className="ai-problem-loading"><div className="ai-loading-spinner" style={{ width: 18, height: 18 }} /><span>Formatting...</span></div>}
+                <div className="ai-problem-body">
+                  {cleanedQuestion ? (
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{cleanedQuestion.description}</ReactMarkdown>
+                  ) : (
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{currentQ.question}</ReactMarkdown>
+                  )}
+                  {(() => {
+                    const examples = currentQ?.coding?.examples?.length > 0 ? currentQ.coding.examples : cleanedQuestion?.examples
+                    return examples?.length > 0 && examples.map((ex, i) => (
+                      <div key={i} className="ai-example">
+                        <p><strong>Example {i + 1}:</strong></p>
+                        <div className="ai-example-block">
+                          <div><strong>Input:</strong> <code>{formatExampleInput(ex.input)}</code></div>
+                          <div><strong>Output:</strong> <code>{typeof ex.output === 'object' ? JSON.stringify(ex.output) : ex.output}</code></div>
+                          {ex.explanation && <div><strong>Explanation:</strong> {ex.explanation}</div>}
+                        </div>
+                      </div>
+                    ))
+                  })()}
+                  {(() => {
+                    const constraints = currentQ?.coding?.constraints?.length > 0 ? currentQ.coding.constraints : cleanedQuestion?.constraints
+                    return constraints?.length > 0 && (
+                      <div className="ai-constraints"><p><strong>Constraints:</strong></p><ul>{constraints.map((c, i) => <li key={i}><code>{c}</code></li>)}</ul></div>
+                    )
+                  })()}
+                </div>
+                {/* Submit coding answer */}
+                <div className="ai-answer-actions" style={{ padding: '0.6rem 0.85rem', borderTop: '1px solid #1e272e' }}>
+                  <button type="button" className="ai-skip-btn" onClick={handleSkip} disabled={submitting}>Skip</button>
+                  <button type="button" className="ai-submit-btn" onClick={handleSubmitAnswer} disabled={!answer.trim() || submitting}>
+                    {submitting ? 'Evaluating...' : 'Submit Answer'}
+                  </button>
+                </div>
+                {/* Next after feedback for coding */}
+                {feedback && !counterQuestion && (
+                  <div className="ai-next-card" style={{ margin: '0.5rem 0.85rem', borderRadius: '8px' }}>
+                    <div><strong>Answer saved</strong></div>
+                    <button type="button" className="ai-run-btn" onClick={handleNext}>Next →</button>
+                  </div>
+                )}
+              </div>
+
+              {/* Editor Panel — CodeWorkspace */}
+              <CodeWorkspace
+                key={currentQ?.question_number}
+                mode="ai"
+                language={ideLanguage}
+                onLanguageChange={handleLanguageChange}
+                code={answer}
+                onCodeChange={(val) => setAnswer(val || '')}
+                languageDisabled={false}
+                testCases={testCases}
+                onTestCasesChange={setTestCases}
+                isStructuredCoding={isStructuredCoding}
+                headerExtra={
                   <button type="button" className={`ai-settings-btn ${isRecording && recordingTarget === 'answer' ? 'ai-action-btn--active' : ''}`} onClick={() => toggleRecording('answer')} title="Dictate code" disabled={!speechSupported}>
                     <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg>
                   </button>
-                  <button type="button" className="ai-run-btn" onClick={handleRunCode} disabled={runningCode}>
-                    <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-                    {runningCode ? 'Running...' : 'Run Code'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Split: Problem + Editor */}
-              <div className="ai-coding-split">
-                {/* Problem Panel */}
-                <div className="ai-problem-panel">
-                  <div className="ai-problem-header">
-                    <h3 className="ai-problem-title">
-                      {codingSource?.questionId ? `${codingSource.questionId}. ` : ''}
-                      {cleanedQuestion?.title || codingSource?.title || 'Coding Challenge'}
-                    </h3>
-                    <span className={`ai-difficulty-badge ai-difficulty-badge--${currentQ.difficulty}`}>{currentQ.difficulty}</span>
-                  </div>
-                  {codingSource?.tags?.length > 0 && (
-                    <div className="ai-problem-tags">{codingSource.tags.map((t) => <span key={t} className="ai-problem-tag">{t}</span>)}</div>
-                  )}
-                  {cleaningQuestion && <div className="ai-problem-loading"><div className="ai-loading-spinner" style={{ width: 18, height: 18 }} /><span>Formatting...</span></div>}
-                  <div className="ai-problem-body">
-                    {cleanedQuestion ? (
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{cleanedQuestion.description}</ReactMarkdown>
-                    ) : (
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{currentQ.question}</ReactMarkdown>
-                    )}
-                    {(() => {
-                      const examples = currentQ?.coding?.examples?.length > 0 ? currentQ.coding.examples : cleanedQuestion?.examples
-                      return examples?.length > 0 && examples.map((ex, i) => (
-                        <div key={i} className="ai-example">
-                          <p><strong>Example {i + 1}:</strong></p>
-                          <div className="ai-example-block">
-                            <div><strong>Input:</strong> <code>{formatExampleInput(ex.input)}</code></div>
-                            <div><strong>Output:</strong> <code>{typeof ex.output === 'object' ? JSON.stringify(ex.output) : ex.output}</code></div>
-                            {ex.explanation && <div><strong>Explanation:</strong> {ex.explanation}</div>}
-                          </div>
-                        </div>
-                      ))
-                    })()}
-                    {(() => {
-                      const constraints = currentQ?.coding?.constraints?.length > 0 ? currentQ.coding.constraints : cleanedQuestion?.constraints
-                      return constraints?.length > 0 && (
-                        <div className="ai-constraints"><p><strong>Constraints:</strong></p><ul>{constraints.map((c, i) => <li key={i}><code>{c}</code></li>)}</ul></div>
-                      )
-                    })()}
-                  </div>
-                  {/* Submit coding answer */}
-                  <div className="ai-answer-actions" style={{ padding: '0.6rem 0.85rem', borderTop: '1px solid #1e272e' }}>
-                    <button type="button" className="ai-skip-btn" onClick={handleSkip} disabled={submitting}>Skip</button>
-                    <button type="button" className="ai-submit-btn" onClick={handleSubmitAnswer} disabled={!answer.trim() || submitting}>
-                      {submitting ? 'Evaluating...' : 'Submit Answer'}
-                    </button>
-                  </div>
-                  {/* Next after feedback for coding */}
-                  {feedback && !counterQuestion && (
-                    <div className="ai-next-card" style={{ margin: '0.5rem 0.85rem', borderRadius: '8px' }}>
-                      <div><strong>Answer saved</strong></div>
-                      <button type="button" className="ai-run-btn" onClick={handleNext}>Next →</button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Editor Panel */}
-                <div className="ai-editor-panel">
-                  <div className="ai-monaco-wrapper">
-                    <Editor
-                      height="100%"
-                      language={ideLanguage === 'cpp' ? 'cpp' : ideLanguage}
-                      theme="vs-dark"
-                      value={answer}
-                      onChange={(val) => setAnswer(val || '')}
-                      options={{ minimap: { enabled: false }, fontSize: 14, lineNumbersMinChars: 3, scrollBeyondLastLine: false, padding: { top: 14 } }}
-                    />
-                  </div>
-
-                  {/* Test Case Panel */}
-                  <div className="ai-bottom-panel">
-                    <div className="ai-bottom-tabs">
-                      <button type="button" className={`ai-bottom-tab ${activeCodeTab !== 'results' ? 'ai-bottom-tab--active' : ''}`} onClick={() => setActiveCodeTab('testcase')}>
-                        Testcase
-                      </button>
-                      <button type="button" className={`ai-bottom-tab ${activeCodeTab === 'results' ? 'ai-bottom-tab--active' : ''}`} onClick={() => setActiveCodeTab('results')}>
-                        Test Result <span className="ai-test-count">({passedCount}/{testCases.length})</span>
-                      </button>
-                    </div>
-
-                    {activeCodeTab !== 'results' ? (
-                      <div className="ai-test-results">
-                        <div className="ai-testcase-tabs">
-                          {testCases.map((tc, i) => (
-                            <button key={tc.id} type="button" className={`ai-testcase-tab ${i === activeTestCaseIndex ? 'ai-testcase-tab--active' : ''} ${tc.passed === true ? 'ai-testcase-tab--pass' : ''} ${tc.passed === false ? 'ai-testcase-tab--fail' : ''}`} onClick={() => setActiveTestCaseIndex(i)}>{tc.name}</button>
-                          ))}
-                          <button type="button" className="ai-testcase-tab ai-testcase-add" onClick={addTestCase}>+</button>
-                        </div>
-                        {activeTestCase && (
-                          <div className="ai-testcase-fields">
-                            {(() => {
-                              const fields = isStructuredCoding ? formatTestCaseDisplay(activeTestCase.input) : null
-                              if (fields) {
-                                return (<>
-                                  {fields.map((f) => (
-                                    <div key={f.key} className="ai-testcase-field">
-                                      <div className="ai-testcase-field-label">{f.key}</div>
-                                      <textarea className="ai-testcase-input" value={f.value} onChange={(e) => {
-                                        try { const p = JSON.parse(activeTestCase.input); p[f.key] = JSON.parse(e.target.value); updateTestCaseField('input', JSON.stringify(p, null, 2)) } catch { updateTestCaseField('input', e.target.value) }
-                                      }} rows={1} />
-                                    </div>
-                                  ))}
-                                  <div className="ai-testcase-field">
-                                    <div className="ai-testcase-field-label">Expected Output</div>
-                                    <textarea className="ai-testcase-input" value={activeTestCase.expectedOutput} onChange={(e) => updateTestCaseField('expectedOutput', e.target.value)} rows={1} />
-                                  </div>
-                                </>)
-                              }
-                              return (<>
-                                <div className="ai-testcase-field">
-                                  <div className="ai-testcase-field-label">Input</div>
-                                  <textarea className="ai-testcase-input" placeholder="stdin input" value={activeTestCase.input} onChange={(e) => updateTestCaseField('input', e.target.value)} rows={2} />
-                                </div>
-                                <div className="ai-testcase-field">
-                                  <div className="ai-testcase-field-label">Expected Output</div>
-                                  <textarea className="ai-testcase-input" placeholder="expected" value={activeTestCase.expectedOutput} onChange={(e) => updateTestCaseField('expectedOutput', e.target.value)} rows={1} />
-                                </div>
-                              </>)
-                            })()}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="ai-test-results">
-                        {caseResults.length > 0 ? (
-                          <>
-                            {caseResults.map((r, i) => (
-                              <div key={i} className="ai-test-case">
-                                <div className={`ai-test-icon ${r.passed ? 'ai-test-icon--pass' : 'ai-test-icon--fail'}`}>
-                                  {r.passed ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg> : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>}
-                                </div>
-                                <div className="ai-test-info">
-                                  <div className="ai-test-name">Case {i + 1}: {r.status}</div>
-                                  <div className="ai-test-detail">Output: {testCases[i]?.actualOutput || 'N/A'}</div>
-                                </div>
-                              </div>
-                            ))}
-                          </>
-                        ) : (
-                          <div style={{ padding: '0.75rem', color: '#5a6f7a', fontSize: '0.82rem' }}>Run your code to see results.</div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </>
+                }
+              />
+            </div>
           )}
         </div>
 

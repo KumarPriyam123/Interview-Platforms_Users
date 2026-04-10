@@ -1,31 +1,53 @@
 export const landingStats = [
   { value: '10k+', label: 'Active users' },
   { value: '50k+', label: 'Sessions completed' },
-  { value: '3+', label: 'Core languages' },
+  { value: '95%', label: 'Success rate' },
 ]
 
 export const landingFeatures = [
   {
     id: 'collab',
-    icon: '</>',
+    icon: '⚡',
     title: 'Real-time Collaboration',
     description:
-      'Share code instantly with synchronized cursors and low-latency interactions.',
+      'Share code instantly with synchronized cursors and low-latency peer-to-peer interactions.',
   },
   {
     id: 'feedback',
-    icon: 'AI',
+    icon: '🧠',
     title: 'AI-Powered Feedback',
     description:
-      'Get immediate feedback on communication, problem solving, and coding quality.',
+      'Get immediate, detailed feedback on communication, problem solving, and coding quality.',
   },
   {
     id: 'video',
-    icon: 'HD',
+    icon: '🎥',
     title: 'HD Video Conferencing',
     description:
       'Simulate a complete face-to-face technical interview directly in your browser.',
   },
+]
+
+export const landingHowItWorks = [
+  {
+    step: 1,
+    title: 'Upload Your Resume',
+    description: 'Our AI analyzes your skills, experience, and target roles to personalize every session.',
+  },
+  {
+    step: 2,
+    title: 'Practice with AI',
+    description: 'Tackle adaptive coding challenges, system design prompts, and behavioral questions in real-time.',
+  },
+  {
+    step: 3,
+    title: 'Get Interview Ready',
+    description: 'Review detailed feedback reports, track your progress, and build confidence before the real thing.',
+  },
+]
+
+export const landingTrustedBy = [
+  'Google', 'Meta', 'Amazon', 'Microsoft', 'Stripe', 'Uber',
 ]
 
 export const mockIndustryLeaders = [

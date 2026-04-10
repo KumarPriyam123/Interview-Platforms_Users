@@ -21,7 +21,6 @@ function App() {
       <Route path="/industry-leaders" element={<IndustryLeadersPage />} />
       <Route path="/ai-interview/:id" element={<AIInterviewPage />} />
       <Route path="/interview-setup" element={<InterviewSetupPage />} />
-      <Route path="/live-interview/:id" element={<AIInterviewPage />} />
       <Route path="/interview-report/:id" element={<InterviewReportPage />} />
       <Route path="/industry-leader-interview" element={<IndustryLeaderInterviewPage />} />
       <Route path="/p2p-interview" element={<P2PInterviewPage />} />

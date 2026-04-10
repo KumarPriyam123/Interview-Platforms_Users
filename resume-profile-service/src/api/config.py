@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     
     # Service URLs
     RESUME_PARSER_URL: str = "http://localhost:8001"
-    PROFILE_MATCHING_URL: str = "http://localhost:8002"
+    PROFILE_MATCHING_URL: str = "http://localhost:8003"
     
     # File upload settings
     MAX_FILE_SIZE: int = 10 * 1024 * 1024  # 10MB

@@ -1,5 +1,12 @@
 # Architecture (MERN Backend v2)
 
+> **Note:** The standalone frontend in `ai-interview-service/frontend/` has been
+> removed. The main `frontend/` app now provides the AI interview UI via
+> `AIInterviewPage.jsx` using the shared `CodeWorkspace` component. Code
+> execution goes through the unified Docker pipeline at
+> `POST /api/code-execution/jobs` in `Backend/`. This service's Node.js backend
+> is retained for its LLM orchestration, interview flow, and question APIs.
+
 ## Overview
 
 `ai-interview-service` is a Node.js microservice with:

@@ -3,10 +3,12 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
+    "dev": "node .\\scripts\\dev-all.mjs",
+    "dev:all": "node .\\scripts\\dev-all.mjs",
+    "dev:p2p": "node .\\scripts\\dev-p2p.mjs",
     "setup": "powershell -ExecutionPolicy Bypass -File .\\scripts\\setup.ps1",
     "start:services": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start_services.ps1",
     "start:code-execution": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start_code_execution_stack.ps1",
-    "start:code-execution:dev": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start_code_execution_stack.ps1 -Dev",
-    "dev:p2p": "node .\\scripts\\dev-p2p.mjs"
+    "start:code-execution:dev": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start_code_execution_stack.ps1 -Dev"
   }
 }

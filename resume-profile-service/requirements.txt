@@ -1,12 +1,12 @@
 # Interview Platform Backend - Combined Requirements
 # Merged from api_gateway, profile_matching, and resume_parser
 
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-pydantic==2.5.3
-pydantic-settings==2.1.0
-python-multipart==0.0.6
-httpx==0.26.0
-aiofiles==23.2.1
-PyMuPDF==1.23.8
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+pydantic>=2.10.0
+pydantic-settings>=2.7.0
+python-multipart>=0.0.18
+httpx>=0.28.0
+aiofiles>=24.1.0
+PyMuPDF>=1.25.0
 python-docx==1.1.0

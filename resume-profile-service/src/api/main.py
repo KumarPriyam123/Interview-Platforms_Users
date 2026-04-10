@@ -44,7 +44,7 @@ A comprehensive platform for matching candidates with the best interviewers for 
 
 ### Services:
 - Resume Parser Service (port 8001)
-- Profile Matching Service (port 8002)
+- Profile Matching Service (port 8003)
 - API Gateway (port 8000) - this service
 
 ### Quick Start:
@@ -101,7 +101,7 @@ async def health_check():
     
     Checks the availability of dependent services:
     - Resume Parser (port 8001)
-    - Profile Matching (port 8002)
+    - Profile Matching (port 8003)
     """
     dependencies = {}
     

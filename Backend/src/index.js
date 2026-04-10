@@ -13,7 +13,6 @@ import {
     registerCodeExecutionSocketHandlers,
 } from './codeExecution/socket.js';
 import connectMongoDB, { disconnectMongoDB } from './db/mongodb.js';
-import { connectPostgres, disconnectPostgres } from './db/postgres.js';
 
 const PORT = process.env.PORT || 8000;
 
@@ -36,12 +35,6 @@ const startServer = async () => {
             console.error('MongoDB startup skipped:', error.message);
         });
 
-        try {
-            connectPostgres();
-        } catch (error) {
-            console.error('PostgreSQL startup skipped:', error.message);
-        }
-
         void initializeCodeExecutionSocketBridge(io).catch((error) => {
             console.error('Code execution socket bridge unavailable:', error.message);
         });
@@ -62,7 +55,6 @@ const startServer = async () => {
 
                 await Promise.allSettled([
                     disconnectMongoDB(),
-                    disconnectPostgres(),
                     closeCodeExecutionQueueResources(),
                 ]);
 

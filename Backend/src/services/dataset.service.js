@@ -71,8 +71,15 @@ export const listDatasetQuestions = async ({ limit = 100 } = {}) => {
   }));
 };
 
-export const getRandomDatasetCodingQuestion = async () => {
-  const sampled = await DatasetQuestion.aggregate([{ $sample: { size: 1 } }]);
+export const getRandomDatasetCodingQuestion = async ({ difficulty } = {}) => {
+  const match = {};
+  if (difficulty && ["easy", "medium", "hard"].includes(difficulty)) {
+    match.difficulty = difficulty;
+  }
+  const pipeline = Object.keys(match).length > 0
+    ? [{ $match: match }, { $sample: { size: 1 } }]
+    : [{ $sample: { size: 1 } }];
+  const sampled = await DatasetQuestion.aggregate(pipeline);
   const row = sampled?.[0];
   if (!row) return null;
 

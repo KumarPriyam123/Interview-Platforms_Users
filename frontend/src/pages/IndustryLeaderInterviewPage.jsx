@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import VideoRoom from '../components/VideoRoom'
+import { CodeWorkspace } from '../components/CodeWorkspace'
 import {
   mockChatMessages,
   mockInterviewPrompt,
@@ -24,6 +25,8 @@ export default function IndustryLeaderInterviewPage() {
   const { state } = useLocation()
   const navigate = useNavigate()
   const [showLiveRoom, setShowLiveRoom] = useState(false)
+  const [code, setCode] = useState(mockStarterCode)
+  const [language, setLanguage] = useState('javascript')
 
   const interviewer = state?.interviewer ?? fallbackInterviewer
   const roomId = state?.roomId ?? `interview-${interviewer.id}`
@@ -106,15 +109,13 @@ export default function IndustryLeaderInterviewPage() {
           </aside>
 
           <main className="panel industry-main-panel">
-            <div className="panel-header industry-code-header">
-              <span>JavaScript (Node v18)</span>
-              <div className="nav-links">
-                <button type="button" className="btn btn-ghost">Reset</button>
-                <button type="button" className="btn btn-primary">Run Code</button>
-              </div>
-            </div>
-
-            <div className="code-surface">{mockStarterCode}</div>
+            <CodeWorkspace
+              mode="industry"
+              language={language}
+              onLanguageChange={setLanguage}
+              code={code}
+              onCodeChange={(val) => setCode(val || '')}
+            />
 
             <div className="panel-body stack">
               <div className="challenge-box">

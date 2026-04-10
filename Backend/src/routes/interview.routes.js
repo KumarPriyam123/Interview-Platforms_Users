@@ -5,7 +5,6 @@ import {
   answerCounterQuestion,
   answerQuestion,
   askDoubt,
-  executeCodingAnswer,
   getAllQuestions,
   getInterviewReport,
   getQuestion,
@@ -32,11 +31,6 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 // router.get("/rag/status", getRagStatus);
 // router.get("/rag/dataset", getRagDataset);
 router.get("/dataset/questions", getMongoDatasetQuestions);
-// router.post("/rag/verify", verifyRagQuestion);
-// router.post("/rag/company-context", addCompanyContext);
-// router.post("/rag/knowledge", addInterviewKnowledge);
-// router.post("/rag/search", searchRagKnowledge);
-router.post("/code/run", executeCodingAnswer);
 router.post("/clean-question", cleanQuestion);
 
 // Start interview (upload resume + generate all questions)

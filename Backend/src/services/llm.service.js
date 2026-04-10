@@ -178,6 +178,10 @@ const extractFirstCppSignature = (source = "") => {
   return `${signatureMatch[1].trim()} solve(${signatureMatch[3].trim()})`;
 };
 
+const hasStructuredTestCases = (testCases) =>
+  Array.isArray(testCases) && testCases.length > 0 &&
+  testCases.some((tc) => tc && typeof tc === "object" && Object.keys(tc).filter((k) => k !== "output" && k !== "hidden").length > 0);
+
 const createCodingQuestion = ({
   question,
   difficulty = "hard",
@@ -189,23 +193,26 @@ const createCodingQuestion = ({
   visibleTestCases = [],
   hiddenTestCases = [],
   source = null,
-}) => ({
-  question,
-  difficulty,
-  type: "coding",
-  coding: {
-    executionStyle: "leetcode",
-    cppSignature,
-    starterCode: buildCppStarterFromSignature(question, cppSignature),
-    inputDescription,
-    outputDescription,
-    constraints,
-    examples,
-    visibleTestCases,
-    hiddenTestCases,
-    source,
-  },
-});
+}) => {
+  const isStructured = hasStructuredTestCases(visibleTestCases) || hasStructuredTestCases(hiddenTestCases);
+  return {
+    question,
+    difficulty,
+    type: "coding",
+    coding: {
+      executionStyle: isStructured ? "leetcode" : "stdin",
+      cppSignature: isStructured ? cppSignature : undefined,
+      starterCode: isStructured ? buildCppStarterFromSignature(question, cppSignature) : undefined,
+      inputDescription,
+      outputDescription,
+      constraints,
+      examples,
+      visibleTestCases,
+      hiddenTestCases,
+      source,
+    },
+  };
+};
 
 const clonePlainObject = (value) => JSON.parse(JSON.stringify(value));
 
@@ -330,10 +337,11 @@ const normalizeCodingPayload = (coding, fallbackQuestion, questionText = "") => 
       }))
     : (visibleTestCases.length > 0 ? createExamplesFromCases(visibleTestCases) : fallback.examples);
 
+  const isStructured = hasStructuredTestCases(visibleTestCases) || hasStructuredTestCases(hiddenTestCases);
   return {
-    executionStyle: "leetcode",
-    cppSignature: repairedSignature,
-    starterCode: buildCppStarterFromSignature(questionText || fallbackQuestion?.question || "", repairedSignature),
+    executionStyle: isStructured ? "leetcode" : "stdin",
+    cppSignature: isStructured ? repairedSignature : undefined,
+    starterCode: isStructured ? buildCppStarterFromSignature(questionText || fallbackQuestion?.question || "", repairedSignature) : undefined,
     inputDescription: String(coding?.inputDescription || fallback.inputDescription || ""),
     outputDescription: String(coding?.outputDescription || fallback.outputDescription || ""),
     constraints: Array.isArray(coding?.constraints) && coding.constraints.length > 0
@@ -354,13 +362,10 @@ const normalizeCodingQuestion = (question, fallbackQuestion = null) => ({
 });
 
 const createGenericCodingPayload = (questionText = "") => {
-  const cppSignature = "string solve(const string& rawInput)";
   return {
-    executionStyle: "leetcode",
-    cppSignature,
-    starterCode: buildCppStarterFromSignature(questionText, cppSignature),
-    inputDescription: "Parse the required values from the raw input string inside solve(...).",
-    outputDescription: "Return the final answer as a string.",
+    executionStyle: "stdin",
+    inputDescription: "Read input from stdin and write output to stdout.",
+    outputDescription: "Print the final answer to stdout.",
     constraints: ["Use an efficient solution that matches the problem requirements."],
     examples: [],
     visibleTestCases: [],
@@ -744,17 +749,49 @@ const askLLM = async (prompt, retries = 1) => {
 
 // ─── Resume Skill Extraction ────────────────────────────────
 
+const SKILL_PATTERNS = [
+  { name: "javascript", re: /\bjavascript\b/i },
+  { name: "typescript", re: /\btypescript\b/i },
+  { name: "react",      re: /\breact(?:\.?js)?\b/i },
+  { name: "node.js",    re: /\bnode(?:\.?js)?\b/i },
+  { name: "express",    re: /\bexpress(?:\.?js)?\b/i },
+  { name: "mongodb",    re: /\bmongo(?:db)?\b/i },
+  { name: "python",     re: /\bpython\b/i },
+  { name: "sql",        re: /\bsql\b/i },
+  { name: "docker",     re: /\bdocker\b/i },
+  { name: "aws",        re: /\baws\b/i },
+  { name: "java",       re: /\bjava\b(?!\s*script)/i },
+  { name: "c++",        re: /\bc\+\+\b|\bcpp\b/i },
+  { name: "go",         re: /\bgolang\b|\bgo\s+(?:lang|programming|developer|engineer)\b/i },
+  { name: "rust",       re: /\brust\s+(?:lang|programming|developer|engineer)\b|\brustlang\b/i },
+  { name: "angular",    re: /\bangular(?:\.?js)?\b/i },
+  { name: "vue",        re: /\bvue(?:\.?js)?\b/i },
+  { name: "next.js",    re: /\bnext(?:\.?js)?\b/i },
+  { name: "graphql",    re: /\bgraphql\b/i },
+  { name: "redis",      re: /\bredis\b/i },
+  { name: "kubernetes", re: /\bkubernetes\b|\bk8s\b/i },
+  { name: "git",        re: /\bgit(?:hub|lab)?\b/i },
+  { name: "linux",      re: /\blinux\b/i },
+  { name: "html",       re: /\bhtml5?\b/i },
+  { name: "css",        re: /\bcss3?\b/i },
+  { name: "tailwind",   re: /\btailwind(?:\s*css)?\b/i },
+  { name: "postgresql", re: /\bpostgre(?:sql|s)?\b/i },
+  { name: "firebase",   re: /\bfirebase\b/i },
+  { name: "django",     re: /\bdjango\b/i },
+  { name: "flask",      re: /\bflask\b/i },
+  { name: "spring",     re: /\bspring(?:\s*boot)?\b/i },
+  { name: "swift",      re: /\bswift(?:ui)?\b/i },
+  { name: "kotlin",     re: /\bkotlin\b/i },
+  { name: ".net",       re: /\b\.?net(?:\s*core)?\b|\bc#\b|\bcsharp\b/i },
+];
+
 const fallbackSkillExtraction = (resumeText = "") => {
-  const normalized = resumeText.toLowerCase();
-  const knownSkills = [
-    "javascript", "typescript", "react", "node", "express", "mongodb",
-    "python", "sql", "docker", "aws", "java", "c++", "go", "rust",
-    "angular", "vue", "next.js", "graphql", "redis", "kubernetes",
-    "git", "linux", "html", "css", "tailwind", "postgresql",
-  ];
+  const matched = SKILL_PATTERNS
+    .filter(({ re }) => re.test(resumeText))
+    .map(({ name }) => name);
 
   return {
-    technical_skills: knownSkills.filter((skill) => normalized.includes(skill)),
+    technical_skills: matched,
     experience_summary: resumeText.slice(0, 500),
     experience_years: 0,
     education: "",
@@ -765,12 +802,12 @@ const fallbackSkillExtraction = (resumeText = "") => {
 export const extractSkillsFromResume = async (resumeText) => {
   const fallback = fallbackSkillExtraction(resumeText || "");
 
-  const prompt = `Analyze this resume text carefully and extract information. Return strictly valid JSON with these keys:
-- technical_skills: string array of all programming languages, frameworks, tools, databases, cloud services found
+  const prompt = `Analyze this resume text carefully and extract ONLY technologies the candidate has actually used or is proficient in. Return strictly valid JSON with these keys:
+- technical_skills: string array of programming languages, frameworks, tools, databases, cloud services the candidate has HANDS-ON experience with. ONLY include skills they explicitly list, used in projects, or mention working with. Do NOT include technologies they only mention in passing or as part of a company name.
 - experience_summary: string summary of work experience (max 500 chars)
 - experience_years: number of total years of experience (estimate if not clear)
 - education: string describing highest education
-- projects: string array of notable project names/descriptions (max 5)
+- projects: string array of notable project names with a brief description of what tech stack was used (max 5)
 
 Resume text:
 ${resumeText || "No resume provided"}`;
@@ -791,13 +828,23 @@ ${resumeText || "No resume provided"}`;
       projects: Array.isArray(parsed.projects) ? parsed.projects.map(String) : [],
     };
   } catch (_error) {
+    console.warn("[extractSkillsFromResume] LLM failed, using regex fallback:", _error.message);
     return fallback;
   }
 };
 
 // ─── Generate ALL Questions at Once (in Sections) ───────────
 
-export const generateAllQuestions = async ({ resumeData, role, company }) => {
+export const generateAllQuestions = async ({ resumeData, role, company, difficulty, interviewType }) => {
+  // Pre-compute difficulty level early (needed for dataset query)
+  const candidateSkills = (resumeData.technical_skills || []).filter(Boolean);
+  const skillsList = candidateSkills.length > 0 ? candidateSkills.join(", ") : "Not specified";
+  const experienceLevel = resumeData.experience_years > 5 ? "senior" : resumeData.experience_years > 2 ? "mid-level" : "junior";
+  const difficultyLevel = difficulty || (experienceLevel === "senior" ? "hard" : experienceLevel === "mid-level" ? "medium" : "easy");
+  const projectContext = Array.isArray(resumeData.projects) && resumeData.projects.length > 0
+    ? `\n- Notable projects: ${resumeData.projects.slice(0, 3).join("; ")}`
+    : "";
+
   // Get RAG context for better question generation
   let ragContext = "";
   let preferredCodingQuestion = null;
@@ -828,24 +875,44 @@ export const generateAllQuestions = async ({ resumeData, role, company }) => {
     // RAG context is optional
   }
 
-  // Get coding question from MongoDB dataset
+  // Get coding question from MongoDB dataset (match difficulty)
   try {
-    preferredCodingQuestion = await getRandomDatasetCodingQuestion();
+    preferredCodingQuestion = await getRandomDatasetCodingQuestion({ difficulty: difficultyLevel });
   } catch (_error) {
     console.warn("MongoDB dataset coding question fetch failed:", _error.message);
   }
 
+  console.log("[generateAllQuestions] Resume context →", {
+    skills: skillsList,
+    experience: resumeData.experience_years,
+    difficulty: difficultyLevel,
+    interviewType,
+    projectCount: resumeData.projects?.length || 0,
+  });
+
   const prompt = `You are an expert interviewer for ${company} hiring for the role: ${role}.
 
-Candidate profile:
-- Skills: ${(resumeData.technical_skills || []).join(", ") || "Not specified"}
-- Experience: ${resumeData.experience_summary || "Not specified"}
-- Years of experience: ${resumeData.experience_years || "Unknown"}
-- Education: ${resumeData.education || "Not specified"}
+## CANDIDATE RESUME PROFILE (USE THIS — questions MUST be based on this profile):
+- Technical Skills: [${skillsList}]
+- Work Experience: ${resumeData.experience_summary || "Not specified"}
+- Years of Experience: ${resumeData.experience_years || "Unknown"} (${experienceLevel} level)
+- Education: ${resumeData.education || "Not specified"}${projectContext}
+
+Target difficulty: ${difficultyLevel}
+Interview type: ${interviewType || "technical"}
 ${ragContext}
 
 Generate a complete set of interview questions organized into sections. Create 8 questions total across 5 sections.
 Note: The coding question for "Problem Solving" section will be sourced separately from a dataset. You do NOT need to generate a coding question.
+
+IMPORTANT RULES FOR QUESTION GENERATION:
+- ONLY ask about technologies/frameworks that are listed in the candidate's skills above OR that are directly relevant to the ${role} role at ${company}.
+- DO NOT default to asking about Vue.js, Go, Rust, or any technology NOT in the candidate's profile unless it is specifically required for the role at ${company}.
+- If the candidate knows React, ask about React — not Angular or Vue.
+- If the candidate knows Python, ask about Python — not Go or Rust.
+- Questions must be diverse — avoid asking about the same technology twice.
+- Each question must be unique and test a different concept/skill area.
+- Adapt difficulty based on the candidate's ${experienceLevel} experience level.
 
 Return strictly valid JSON with this structure:
 {
@@ -857,24 +924,7 @@ Return strictly valid JSON with this structure:
         {
           "question": "The interview question text",
           "difficulty": "easy|medium|hard",
-          "type": "text|coding",
-          "coding": {
-            "executionStyle": "leetcode",
-            "cppSignature": "vector<int> solve(vector<int>& arr, int k)",
-            "starterCode": "Optional starter code string",
-            "inputDescription": "How the function inputs should be interpreted",
-            "outputDescription": "How the function output should be formatted",
-            "constraints": ["constraint 1", "constraint 2"],
-            "examples": [
-              { "input": "arr = [4,5,4,6,5,7,8,6], k = 3", "output": "5 5 6 6 7 7", "explanation": "short explanation" }
-            ],
-            "visibleTestCases": [
-              { "arr": [4,5,4,6,5,7,8,6], "k": 3, "output": "5 5 6 6 7 7" }
-            ],
-            "hiddenTestCases": [
-              { "arr": [2,3,2,4,5,4,6], "k": 4, "output": "3 3 2 5" }
-            ]
-          }
+          "type": "text"
         }
       ]
     }
@@ -882,19 +932,18 @@ Return strictly valid JSON with this structure:
 }
 
 The 5 sections MUST be:
-1. "Introduction & Background" (2 easy questions based SOLELY on their resume and experience)
-2. "Technical Skills" (3 medium/hard questions):
-   - Question 1: Pick ONE specific technology/framework/tool from the candidate's resume skills list and ask a deep, industry-level question that tests production-grade knowledge (e.g. performance tuning, internal architecture, advanced patterns, real-world pitfalls). This question MUST reference the chosen resume skill by name.
-   - Question 2: Ask about a core technical concept that a ${role} at ${company} must know. Do NOT use the candidate's resume — base this purely on what ${company} values for this role (e.g. system internals, distributed systems, concurrency, security, CI/CD).
-   - Question 3: Ask about another industry-standard technology or practice relevant to ${role} at ${company} that is NOT from the candidate's resume. Focus on what the company's tech stack or domain demands.
-3. "System Design" (Exactly 1 hard question presenting a realistic, scalable system design scenario relevant to ${company})
+1. "Introduction & Background" (2 easy questions based SOLELY on their resume, projects, and experience — ask about specific projects or decisions they've made)
+2. "Technical Skills" (3 ${difficultyLevel} questions):
+   - Question 1: Pick ONE specific technology from the candidate's actual skill list [${skillsList}] and ask a deep, production-grade question about it. Reference the skill by name.
+   - Question 2: Ask about a core technical concept that a ${role} at ${company} must know. This should relate to the domain (e.g. system internals, API design, databases, security, CI/CD) — NOT a random technology.
+   - Question 3: Ask about another technology from the candidate's skills [${skillsList}] OR a technology specifically used at ${company} for this role. Do NOT pick random technologies.
+3. "System Design" (1 hard question — a realistic system design scenario relevant to ${company}'s domain)
 4. "Problem Solving" (Leave this section with an empty questions array — the coding question will be injected from an external dataset)
-5. "Behavioral & Cultural Fit" (2 easy/medium questions assessing soft skills and cultural alignment)
+5. "Behavioral & Cultural Fit" (2 easy/medium questions about teamwork, conflict resolution, or leadership relevant to ${company}'s culture)
 
-Make questions specific to ${company} and the ${role} role.
-Use retrieved vector DB question seeds whenever they are available. You may lightly adapt wording for the role and company, but keep the original question intent.
-
-Do NOT generate a coding question — it will be sourced from a curated dataset and injected automatically.`;
+Do NOT generate a coding question — it will be sourced from a curated dataset and injected automatically.
+Do NOT include the "coding" field for text questions.
+Make every question specific and tailored — no generic filler questions.`;
 
   const raw = await askLLM(prompt);
   const parsed = parseJSONObject(raw, null);
